@@ -16,6 +16,7 @@ ml/metrics.json
 node_modules/
 frontend/dist/
 frontend/.vite/
+*.tsbuildinfo
 
 # Env & secrets
 .env
