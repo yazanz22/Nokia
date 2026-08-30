@@ -35,6 +35,10 @@ The agent disambiguates with the extra signals CAMARA / connectivity-insights ex
 | `SENSOR_FAILURE` | true | normal | 0 | normal | sensor kit — cheap dispatch |
 | `NORMAL` | true | normal | 0 | normal | — |
 
+The dataset is synthetic — `data/dataset_builder.py` generates it (500 assets, 4 labelled signal
+signatures; `NORMAL` and `SENSOR_FAILURE` deliberately overlap so the ML task stays honest). The
+committed `data/dataset1.csv` is the canonical copy everything is built and tested against.
+
 ---
 
 ## Architecture
