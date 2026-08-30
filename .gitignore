@@ -31,3 +31,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Claude Code local project config
+.claude/
