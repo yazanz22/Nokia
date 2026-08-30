@@ -1,0 +1,26 @@
+# Install with:  pip install -r requirements.txt
+# Exact versions that were tested together are pinned in requirements.lock.txt
+# (Python 3.14, Windows). Regenerate the lock with: pip freeze > requirements.lock.txt
+
+# Core API
+fastapi>=0.141
+uvicorn[standard]>=0.52
+pydantic>=2.13
+pydantic-settings>=2.15
+python-dotenv>=1.0
+httpx>=0.28
+
+# AI agent layer (Resource & Tooling Guide §2 Pydantic AI / §3 Groq)
+pydantic-ai-slim[groq]>=2.36
+
+# ML inference (model trained by ../ml/train.py)
+scikit-learn>=1.9
+numpy>=2.5
+joblib>=1.5
+
+# Nokia Network as Code SDK (only needed for NAC_MODE=live)
+network-as-code>=10.0
+
+# Dev / test
+pytest>=9.0
+pytest-asyncio>=1.4
