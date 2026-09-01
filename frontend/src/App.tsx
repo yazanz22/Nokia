@@ -4,6 +4,7 @@ import { AssetDrawer } from "./components/AssetDrawer";
 import { FleetMap } from "./components/FleetMap";
 import { IncidentFeed } from "./components/IncidentFeed";
 import { KpiBar } from "./components/KpiBar";
+import { LiveCamaraPanel } from "./components/LiveCamaraPanel";
 import { ScenarioPanel } from "./components/ScenarioPanel";
 import { WorkOrderCard } from "./components/WorkOrderCard";
 import { useLiveState } from "./lib/ws";
@@ -86,6 +87,12 @@ export default function App() {
             <h2>Scenario control</h2>
             <div className="body">
               <ScenarioPanel assets={assets} />
+            </div>
+          </div>
+          <div className="panel">
+            <h2>Nokia Network as Code · live</h2>
+            <div className="body">
+              <LiveCamaraPanel assetId={selectedAsset} />
             </div>
           </div>
           <div className="panel grow">

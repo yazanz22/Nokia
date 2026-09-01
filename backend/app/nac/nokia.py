@@ -1,91 +1,158 @@
-"""Live Nokia Network-as-Code adapter.
+"""Live Nokia Network as Code adapter — real CAMARA calls.
 
-All SDK specifics are isolated here — the rest of the codebase only depends on the
-:class:`NetworkClient` protocol in ``base.py``.
+All SDK/transport specifics are isolated here; the rest of the codebase depends only
+on the :class:`NetworkClient` protocol in ``base.py``.
 
-Written against the Fern-generated ``network_as_code`` **10.0.0** SDK, which is
-what ``pip install network-as-code`` currently resolves to:
+Verified against the Nokia sandbox on 2026-09-01:
 
-    from network_as_code import AsyncNetworkAsCodeApi
-    api = AsyncNetworkAsCodeApi(api_key=KEY)                       # RapidAPI-hosted sandbox
-    await api.device_status.check_connectivity(device={"phone_number": "+3197..."})
-        -> .connectivity_status  ("CONNECTED_DATA" | "CONNECTED_SMS" | "NOT_CONNECTED")
-    await api.location.retrieve(device={"phone_number": "+3197..."}, max_age=60)
-        -> .area (circle: .center.latitude/.longitude, .radius) , .last_location_time
+    POST /device-status/device-reachability-status/v1/retrieve  {"device":{...}}
+        -> {"reachable": true, "connectivity": ["SMS"], "lastStatusTime": "..."}
 
-⚠️  SEAM: the two ``# --- SEAM`` blocks are the only places to touch if the FILO
-sandbox entitles a different SDK/shape. Response parsing is deliberately defensive.
+    POST /device-status/v0/roaming        {"device":{"phoneNumber":"+999..."}}
+        -> {"roaming": true, "countryCode": 36, "countryName": ["HU"], ...}
+
+    POST /location-retrieval/v0/retrieve  {"device":{...}, "maxAge": 60}
+        -> {"lastLocationTime": "...", "area": {"areaType":"CIRCLE",
+            "center": {"latitude": .., "longitude": ..}, "radius": 1000}}
+
+Reachability Status v1 is the primary call — it is the CAMARA API the solution is
+built around, and its ``reachable`` flag maps directly onto the same field in our
+telemetry. ``/device-status/v0/connectivity`` is kept as a fallback.
+
+We call these directly with httpx rather than through the generated
+``network-as-code`` SDK: the SDK defaults to a different base host, and the request
+shape here is three small POSTs. Fewer moving parts to fail on stage.
+
+Auth is RapidAPI-style: ``x-rapidapi-key`` plus ``x-rapidapi-host``.
 """
 
 from __future__ import annotations
+
+import logging
+
+import httpx
 
 from ..config import get_settings
 from ..models import utcnow
 from .base import DeviceLocation, Reachability, _now
 
+log = logging.getLogger("nac.live")
+
 _VALID = {"CONNECTED_DATA", "CONNECTED_SMS", "NOT_CONNECTED"}
 
-
-def _first_attr(obj: object, *names: str, default=None):
-    for n in names:
-        if isinstance(obj, dict) and n in obj:
-            return obj[n]
-        if hasattr(obj, n):
-            return getattr(obj, n)
-    return default
+REACHABILITY_PATH = "/device-status/device-reachability-status/v1/retrieve"
+CONNECTIVITY_PATH = "/device-status/v0/connectivity"  # fallback
+ROAMING_PATH = "/device-status/v0/roaming"
+LOCATION_PATH = "/location-retrieval/v0/retrieve"
 
 
 class NokiaNaCClient:
+    """CAMARA Device Status + Location Retrieval against the Nokia sandbox."""
+
     source = "live"
 
     def __init__(self) -> None:
         settings = get_settings()
         self._device_map = settings.device_map()
-        from network_as_code import AsyncNetworkAsCodeApi  # lazy: mock mode needs no SDK
-
-        kwargs: dict = {"api_key": settings.nac_api_key}
-        if settings.nac_base_url:
-            kwargs["base_url"] = settings.nac_base_url
-        self._api = AsyncNetworkAsCodeApi(**kwargs)
+        self._default_device = settings.nac_default_device.strip()
+        self._client = httpx.AsyncClient(
+            base_url=f"https://{settings.nac_api_host}",
+            headers={
+                "x-rapidapi-key": settings.nac_api_key,
+                "x-rapidapi-host": settings.nac_rapidapi_host,
+                "Content-Type": "application/json",
+            },
+            timeout=httpx.Timeout(settings.nac_timeout_seconds),
+        )
 
     def _device(self, asset_id: str) -> dict:
-        phone = self._device_map.get(asset_id)
+        """Map a fleet asset to a sandbox device.
+
+        The sandbox issues a small pool of test MSISDNs, far fewer than our fleet, so
+        assets without an explicit mapping fall back to NAC_DEFAULT_DEVICE. That keeps
+        the calls genuinely live for any asset instead of failing for most of them.
+        """
+        phone = self._device_map.get(asset_id) or self._default_device
         if not phone:
-            raise KeyError(f"No sandbox device mapped for {asset_id} (set NAC_DEVICE_MAP)")
-        return {"phone_number": phone}
+            raise KeyError(
+                f"no sandbox device for {asset_id}: set NAC_DEVICE_MAP or NAC_DEFAULT_DEVICE"
+            )
+        return {"phoneNumber": phone}
+
+    async def _post(self, path: str, payload: dict) -> dict:
+        resp = await self._client.post(path, json=payload)
+        resp.raise_for_status()
+        return resp.json()
 
     async def get_reachability(self, asset_id: str) -> Reachability:
         device = self._device(asset_id)
-        # --- SEAM 1: device status --------------------------------------------
-        resp = await self._api.device_status.check_connectivity(device=device)
-        raw = _first_attr(resp, "connectivity_status", "status", default="UNKNOWN")
-        status = str(getattr(raw, "value", raw)).upper()
-        # --------------------------------------------------------------------
+        try:
+            body = await self._post(REACHABILITY_PATH, {"device": device})
+            # {"reachable": true, "connectivity": ["SMS"|"DATA"], ...}
+            if body.get("reachable"):
+                modes = [str(m).upper() for m in (body.get("connectivity") or [])]
+                status = "CONNECTED_DATA" if "DATA" in modes else "CONNECTED_SMS"
+            else:
+                status = "NOT_CONNECTED"
+        except Exception as exc:  # noqa: BLE001
+            log.warning("reachability v1 failed (%s) — trying connectivity v0", exc)
+            body = await self._post(CONNECTIVITY_PATH, {"device": device})
+            status = str(body.get("connectivityStatus", "UNKNOWN")).upper()
+
+        # Roaming is a second, independent CAMARA signal: a device roaming out of
+        # country is a coverage story, not a hardware story. Best-effort — never let
+        # it fail the primary reachability answer.
+        roaming = None
+        country = None
+        try:
+            r = await self._post(ROAMING_PATH, {"device": device})
+            roaming = bool(r.get("roaming", False))
+            names = r.get("countryName") or []
+            country = names[0] if names else None
+        except Exception as exc:  # noqa: BLE001
+            log.debug("roaming lookup failed for %s: %s", asset_id, exc)
+
         return Reachability(
             asset_id=asset_id,
             status=status if status in _VALID else "UNKNOWN",
-            signal_strength_dbm=None,  # not exposed by Device Status; comes from Congestion/Connectivity Insights
+            # Device Status does not expose radio metrics; those come from the
+            # telemetry side. Left as None so the agent knows they're unavailable
+            # rather than reading a fabricated zero.
+            signal_strength_dbm=None,
             neighbor_fail_count=None,
+            roaming=roaming,
+            country=country,
             as_of=_now(),
             source="live",
         )
 
     async def get_location(self, asset_id: str) -> DeviceLocation:
         device = self._device(asset_id)
-        # --- SEAM 2: location retrieval -------------------------------------
-        resp = await self._api.location.retrieve(device=device, max_age=60)
-        area = _first_attr(resp, "area", default=resp)
-        center = _first_attr(area, "center", "point", default=area)
-        lat = float(_first_attr(center, "latitude", "lat", default=0.0))
-        lon = float(_first_attr(center, "longitude", "lon", "lng", default=0.0))
-        radius = _first_attr(area, "radius", "accuracy", default=None)
-        last_time = _first_attr(resp, "last_location_time", default=None)
-        # --------------------------------------------------------------------
+        body = await self._post(LOCATION_PATH, {"device": device, "maxAge": 60})
+        area = body.get("area") or {}
+        center = area.get("center") or {}
+        lat = float(center.get("latitude", 0.0))
+        lon = float(center.get("longitude", 0.0))
+        radius = area.get("radius")
+
+        as_of = utcnow()
+        raw_time = body.get("lastLocationTime")
+        if raw_time:
+            try:
+                from datetime import datetime
+
+                as_of = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
         return DeviceLocation(
             asset_id=asset_id,
             latitude=lat,
             longitude=lon,
-            accuracy_m=float(radius) if radius is not None else 50.0,
-            as_of=last_time if hasattr(last_time, "year") else utcnow(),
+            accuracy_m=float(radius) if radius is not None else 1000.0,
+            as_of=as_of,
             source="live",
         )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()

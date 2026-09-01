@@ -18,8 +18,10 @@ scikit-learn>=1.9
 numpy>=2.5
 joblib>=1.5
 
-# Nokia Network as Code SDK (only needed for NAC_MODE=live)
-network-as-code>=10.0
+# Note: the generated `network-as-code` SDK is deliberately NOT a dependency. It is
+# built against a different sandbox host than the one our Application Key serves and
+# 404s on every call; app/nac/nokia.py talks to the verified CAMARA endpoints over
+# httpx instead. Three small POSTs, no extra surface to fail on stage.
 
 # Dev / test
 pytest>=9.0

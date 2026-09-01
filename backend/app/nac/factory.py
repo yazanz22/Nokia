@@ -46,22 +46,24 @@ class FallbackNaCClient:
 
 
 _client: NetworkClient | None = None
+_live: NetworkClient | None = None
+_live_tried = False
 
 
 def get_network_client() -> NetworkClient:
+    """The client the *agent* uses while investigating fleet incidents."""
     global _client
     if _client is not None:
         return _client
     settings = get_settings()
     mock = MockNaCClient()
     if settings.nac_mode == "live":
-        try:
-            from .nokia import NokiaNaCClient
-
-            _client = FallbackNaCClient(NokiaNaCClient(), mock)
+        live = get_live_client()
+        if live is not None:
+            _client = FallbackNaCClient(live, mock)
             log.info("Network-as-Code: live sandbox (mock fallback armed)")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Could not init live NaC client (%s) — using mock only", exc)
+        else:
+            log.warning("live NaC unavailable — using mock only")
             _client = mock
     else:
         _client = mock
@@ -69,6 +71,40 @@ def get_network_client() -> NetworkClient:
     return _client
 
 
+def get_live_client() -> NetworkClient | None:
+    """The real Nokia sandbox client, regardless of NAC_MODE.
+
+    Kept separate from :func:`get_network_client` on purpose. The sandbox issues a
+    handful of test SIMs that live in Hungary and always report reachable, so they
+    cannot stand in for a 30-machine fleet spread across a NEOM site — a live
+    location lookup would route every dispatch to Budapest.
+
+    So the two are distinct and we say so out loud: the fleet simulation is served by
+    the dataset-backed mock implementing the identical CAMARA contract, while this
+    client answers the "is the integration actually real?" question with a genuine
+    call anyone can watch.
+    """
+    global _live, _live_tried
+    if _live is not None or _live_tried:
+        return _live
+    _live_tried = True
+    settings = get_settings()
+    if not settings.nac_api_key:
+        log.info("no NAC_API_KEY — live CAMARA checks disabled")
+        return None
+    try:
+        from .nokia import NokiaNaCClient
+
+        _live = NokiaNaCClient()
+        log.info("live CAMARA client ready (%s)", settings.nac_api_host)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not init live NaC client: %s", exc)
+        _live = None
+    return _live
+
+
 def reset_network_client() -> None:
-    global _client
+    global _client, _live, _live_tried
     _client = None
+    _live = None
+    _live_tried = False

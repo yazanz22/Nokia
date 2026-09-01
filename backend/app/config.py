@@ -27,7 +27,13 @@ class Settings(BaseSettings):
     nac_mode: str = "mock"  # "mock" | "live"
     nac_api_key: str = ""
     nac_device_map: str = ""  # "EQ-0007:+3197...,EQ-0042:+3197..."
-    nac_base_url: str = "https://network-as-code.p-eu.rapidapi.com"
+    # Verified sandbox transport (see app/nac/nokia.py). RapidAPI-style auth.
+    nac_api_host: str = "network-as-code.p-eu.apihub.nokia.io"
+    nac_rapidapi_host: str = "network-as-code.nokia.rapidapi.com"
+    # The sandbox issues far fewer test MSISDNs than we have assets; unmapped
+    # assets fall back to this one so every call stays genuinely live.
+    nac_default_device: str = "+99999991000"
+    nac_timeout_seconds: float = 20.0
 
     # ── AI agent layer ──────────────────────────────────────────────────────
     agent_mode: str = "rule"  # "rule" | "llm"

@@ -18,3 +18,11 @@ export async function getHealth() {
   const r = await fetch("/api/debug/health");
   return r.json();
 }
+
+/** Fires a genuine CAMARA call at the Nokia sandbox, regardless of NAC_MODE. */
+export async function runLiveCheck(assetId?: string) {
+  const q = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : "";
+  const r = await fetch(`/api/nac/live-check${q}`, { method: "POST" });
+  if (!r.ok) throw new Error((await r.text()) || "live check failed");
+  return r.json();
+}

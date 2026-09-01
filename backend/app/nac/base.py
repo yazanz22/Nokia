@@ -30,6 +30,11 @@ class Reachability(BaseModel):
     status: ReachStatus
     signal_strength_dbm: float | None = None
     neighbor_fail_count: int | None = None
+    # From CAMARA Device Roaming Status. A device roaming out of its home country is
+    # a coverage/connectivity story, never a hardware one — the deck's
+    # "Disconnected / Roaming Out" branch.
+    roaming: bool | None = None
+    country: str | None = None
     as_of: datetime
     source: Literal["live", "mock"]
 
