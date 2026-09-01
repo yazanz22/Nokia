@@ -54,6 +54,27 @@ class MockNaCClient:
 
     async def get_location(self, asset_id: str) -> DeviceLocation:
         await asyncio.sleep(self._latency)
+        # Location tracks the *device*, not the failure reading. The dataset draws a
+        # fresh random lat/lon on every row, so picking a row's coordinates would put
+        # the asset kilometres from where it actually is. Serve the asset's live
+        # position instead, offset by the accuracy radius to mimic network-side
+        # trilateration (which is coarser than the on-board GPS the device can no
+        # longer report).
+        from ..store import store  # local import avoids a cycle
+
+        asset = store.assets.get(asset_id)
+        accuracy = self._rng.uniform(15.0, 60.0)
+        if asset is not None:
+            # ~1 deg latitude ≈ 111 km; scatter within the accuracy circle.
+            jitter_deg = accuracy / 111_000.0
+            return DeviceLocation(
+                asset_id=asset_id,
+                latitude=asset.latitude + self._rng.uniform(-jitter_deg, jitter_deg),
+                longitude=asset.longitude + self._rng.uniform(-jitter_deg, jitter_deg),
+                accuracy_m=accuracy,
+                as_of=_now(),
+                source="mock",
+            )
         row = self._row_for(asset_id)
         return DeviceLocation(
             asset_id=asset_id,

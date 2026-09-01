@@ -47,9 +47,11 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
       <div className="row">
         <button className="primary" disabled={busy || !target} onClick={() => fire("blindspot")}>
           Cellular blind spot
+          <span className="target">{target || "—"}</span>
         </button>
         <button className="primary" disabled={busy || !target} onClick={() => fire("hardware")}>
           Hardware fault
+          <span className="target">{target || "—"}</span>
         </button>
       </div>
       <button className="bad" disabled={busy} onClick={reset}>

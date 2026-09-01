@@ -201,6 +201,19 @@ body {
   border-color: #1f4f79;
   color: var(--accent);
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  line-height: 1.2;
+}
+/* The dropdown resets to the first healthy asset after each injection, so the
+   button restates its target — the presenter always sees which machine fires. */
+.scenario button.primary .target {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
 }
 .scenario button.bad {
   border-color: #5a2b32;
