@@ -72,12 +72,18 @@ async def debug_nac(asset_id: str) -> dict:
 
 @router.get("/debug/health")
 def debug_health() -> dict:
+    import app.agent as agent_mod
+
     s = get_settings()
     return {
         "nac_mode": s.nac_mode,
         "live_camara_available": get_live_client() is not None,
         "agent_mode": s.agent_mode,
         "llm_model": s.llm_model if s.agent_mode == "llm" else None,
+        # Which agent actually ran last. If AGENT_MODE=llm but this says
+        # "rule (fallback)", the model is not running — check last_agent_error.
+        "last_agent_used": agent_mod.last_agent_used,
+        "last_agent_error": agent_mod.last_agent_error,
         "ml_backend": fault_model.backend,
         "fleet_size": len(store.assets),
         "open_incidents": sum(1 for i in store.incidents.values() if i.closed_at is None),

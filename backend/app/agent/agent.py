@@ -10,7 +10,14 @@ If it doesn't, ``run_investigation`` falls back to the rule agent.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+# Imported at module scope, not inside the builder: this module uses
+# `from __future__ import annotations`, so Pydantic AI resolves each tool's
+# `ctx: RunContext[Deps]` annotation from module globals when the decorator runs.
+# A function-local import leaves it undefined and every tool registration fails.
+# The cost is nil — this module is itself only imported when AGENT_MODE=llm.
+from pydantic_ai import Agent, RunContext
 
 from ..config import get_settings
 from ..models import utcnow
@@ -43,7 +50,12 @@ Policy:
    - unreachable BUT strong signal, no neighbour failures -> the network is fine; the machine died.
 3. Coverage gap -> call `resolve_as_blindspot`. Do not predict faults, do not dispatch.
 4. Otherwise -> call `predict_fault`, then `get_location`, then `dispatch_technician`.
-Finish by calling exactly one of `resolve_as_blindspot` or `dispatch_technician`.
+
+You MUST finish by actually invoking exactly one of `resolve_as_blindspot` or
+`dispatch_technician` as a real tool call. Writing out the tool name and its arguments as
+text — JSON or prose — does nothing: the incident stays open and no one is dispatched.
+Nothing happens until the tool is invoked.
+
 Keep reasoning short and concrete.
 """
 
@@ -59,8 +71,6 @@ class Deps:
 
 
 def _build_agent():
-    from pydantic_ai import Agent, RunContext
-
     settings = get_settings()
     agent = Agent(settings.llm_model, deps_type=Deps, system_prompt=SYSTEM_PROMPT, retries=2)
 
@@ -195,7 +205,23 @@ async def run_llm_investigation(incident_id: str) -> None:
     )
     result = await agent.run(prompt, deps=deps)
 
+    # Open-weight models intermittently *describe* the final tool call in prose or
+    # JSON instead of invoking it — the investigation stalls one step from done,
+    # with the diagnosis already made. Rather than throw that work away, ask once
+    # more, explicitly. This recovers the run the large majority of the time.
     if deps.terminal is None:
-        # Model finished without a terminal action — hand off to the deterministic agent.
-        log.warning("LLM agent produced no terminal action for %s: %r", incident_id, result.output)
+        log.warning(
+            "no terminal action for %s (%r) — asking again", incident_id, str(result.output)[:200]
+        )
+        result = await agent.run(
+            "You have not finished. Invoke the terminal tool now as a real tool call: "
+            "`resolve_as_blindspot` if this is a coverage gap, otherwise "
+            "`dispatch_technician`. Do not reply with text.",
+            deps=deps,
+            message_history=result.all_messages(),
+        )
+
+    if deps.terminal is None:
+        # Still nothing — hand off to the deterministic agent.
+        log.warning("LLM agent gave up on %s: %r", incident_id, str(result.output)[:200])
         raise RuntimeError("no terminal action")

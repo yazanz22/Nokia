@@ -15,19 +15,37 @@ from ..config import get_settings
 log = logging.getLogger("agent")
 
 
+# Which agent actually resolved the most recent investigation. The LLM path falls
+# back to the rule path on any error, which is what you want on stage — but it also
+# means a broken model config looks exactly like success. This makes it visible.
+last_agent_used: str = "none"
+last_agent_error: str | None = None
+
+
 async def run_investigation(incident_id: str) -> None:
+    global last_agent_used, last_agent_error
     settings = get_settings()
     if settings.agent_mode == "llm":
         try:
             from .agent import run_llm_investigation
 
             await run_llm_investigation(incident_id)
+            last_agent_used = "llm"
+            last_agent_error = None
             return
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            last_agent_error = f"{type(exc).__name__}: {exc}"
             log.exception("LLM agent failed for %s — falling back to rule agent", incident_id)
+            # Drop the abandoned partial trace. The rule agent re-runs the whole
+            # investigation, and leaving both in place shows the operator two
+            # interleaved step-1s for a single incident.
+            from ..store import store
+
+            store.trace[incident_id] = []
     from .rule_agent import run_rule_investigation
 
     await run_rule_investigation(incident_id)
+    last_agent_used = "rule (fallback)" if settings.agent_mode == "llm" else "rule"
 
 
-__all__ = ["run_investigation"]
+__all__ = ["run_investigation", "last_agent_used", "last_agent_error"]

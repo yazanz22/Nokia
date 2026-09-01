@@ -21,6 +21,7 @@ per run — **read what's on screen, don't recite from memory.**
 | **Scenario A asset** | `EQ-0295` — Haul Truck HT-295, Red Sea Global, Coastal Access Road |
 | **Scenario B asset** | `EQ-0180` — Loader LD-180, NEOM, Trojena Ridge |
 | **Modes** | See "Pre-flight" — decide `NAC_MODE` / `AGENT_MODE` before you walk in, not on stage. |
+| **Model** | `groq:openai/gpt-oss-120b` (open weights, served by Groq — Guide §3). `groq:qwen/qwen3.8-27b` also verified end to end if Groq degrades one of them. |
 
 Why those two assets: a **haul truck** is mobile, so "it drove into a dead zone" is intuitive. A
 **loader** sits and works, so "it didn't go anywhere, it overheated" is equally intuitive. The contrast
@@ -38,6 +39,10 @@ pwsh scripts/dev.ps1
       `curl http://127.0.0.1:8000/api/debug/health`. If it says `rule-based`, run `python ml/train.py`.
 - [ ] `"live_camara_available": true` in that same response, or the live-proof panel will error
 - [ ] **Predictive maintenance** panel shows 4 at-risk machines (not "unavailable")
+- [ ] **Run `python scripts/scenario_smoke.py` once on the venue network.** In `llm` mode it fails
+      loudly if the model never actually ran — a silent fallback to the rule agent produces
+      *identical, correct* output, so this is the only way to know the model is live before you
+      claim it is. After it passes, `"last_agent_used"` in `/api/debug/health` should read `llm`.
 - [ ] Dashboard open at `http://127.0.0.1:5173`, browser zoomed so the **three columns** all fit
 - [ ] **Reset demo** clicked — KPI bar reads `100.0%` / `30/30` / all zeros
 - [ ] Notifications off, Do Not Disturb on, Slack and mail closed
@@ -208,7 +213,8 @@ pwsh scripts/dev.ps1
 | Symptom | Fix |
 |---|---|
 | Scenario button does nothing | Check the button's target ID. If the dropdown is empty, click **Reset demo**. |
-| Trace stalls part-way (LLM mode) | Say *"switching to our deterministic path"* — set `AGENT_MODE=rule` in `.env`, restart backend. Identical on screen. |
+| Trace stalls part-way (LLM mode) | It self-corrects: the agent re-asks for the terminal tool call, and failing that the rule agent finishes the incident. Say nothing and let it land. |
+| LLM slow or rate-limited | Say *"switching to our deterministic path"* — set `AGENT_MODE=rule` in `.env`, restart backend. Identical on screen, no model call. |
 | Dashboard shows "reconnecting…" | Backend died. Restart it (below); the dashboard reconnects on its own. |
 | KPIs/state look stale or wrong | Click **Reset demo**, re-run from Scenario A. |
 | Everything is broken | Cut to the backup video. Do not debug on stage. |
@@ -271,8 +277,16 @@ of a mechanic. Not every dispatch is a pump.
 **"Which part of this is the AI agent, exactly?"**
 The orchestration. The agent decides *whether* to call Device Status, *how to weigh* conflicting
 signals — unreachable but strong signal is the hard case — *whether* the ML model is even relevant,
-and *whether* to spend a dispatch. Pydantic AI with a Groq-hosted Llama 3.3 70B; the CAMARA endpoints
-are registered as tools it chooses to invoke.
+and *whether* to spend a dispatch. Pydantic AI driving `openai/gpt-oss-120b` on Groq's free tier; the
+CAMARA endpoints and the ML models are registered as tools it chooses to invoke. The wording in the
+trace is the model's own — that resolution line about "-127 dBm and 12 neighbour cell failures" was
+written by it, not templated.
+
+**"What if the model gets it wrong on stage?"**
+Two guards. Every terminal action is a tool with fixed logic, so the model chooses *whether* to
+dispatch, never *what* a dispatch does — it cannot invent a technician or a part. And if it stalls
+without deciding, the deterministic agent finishes the same incident. You can run the whole demo with
+`AGENT_MODE=rule` and no model at all; the on-screen result is identical.
 
 **"How is this different from existing fleet telematics?"**
 Telematics tells you a machine stopped reporting. It cannot tell you *why*, because it only sees the

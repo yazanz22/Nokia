@@ -5,6 +5,7 @@ See .env.example at the repo root for the full list with descriptions.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -54,6 +55,23 @@ class Settings(BaseSettings):
     # rather than only ones that have already died.
     forecast_as_of: str = "2026-08-18T06:00:00"
 
+    def export_provider_keys(self) -> None:
+        """Publish LLM keys into the process environment.
+
+        Pydantic AI providers read their credentials from environment variables, but
+        ours live in .env and are loaded into this settings object — so without this
+        the agent raises "set the GROQ_API_KEY environment variable" and silently
+        falls back to the rule agent. Done here rather than per-provider so
+        LLM_MODEL stays swappable.
+        """
+        for var, value in (
+            ("GROQ_API_KEY", self.groq_api_key),
+            ("GEMINI_API_KEY", self.gemini_api_key),
+            ("GOOGLE_API_KEY", self.gemini_api_key),
+        ):
+            if value and not os.environ.get(var):
+                os.environ[var] = value
+
     def device_map(self) -> dict[str, str]:
         """Parse NAC_DEVICE_MAP into {asset_id: phone_number}."""
         out: dict[str, str] = {}
@@ -68,4 +86,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    settings.export_provider_keys()
+    return settings

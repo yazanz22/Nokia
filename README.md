@@ -76,10 +76,15 @@ physics being modelled rather than the classifier being clever.
 ### AI agent layer — Resource & Tooling Guide compliant
 
 - **Framework:** Pydantic AI (Guide §2, code-first)
-- **Model:** Groq — Llama 3.3 70B (Guide §3, free tier), swappable to Gemini / Ollama via `LLM_MODEL`
-- CAMARA APIs are registered as **tools the model chooses to call** (Guide §11), not buttons
-- **Failsafe:** `AGENT_MODE=rule` runs the identical closed loop with no LLM call (Guide §11 graceful
-  degradation). This is also the default while the Groq key is being provisioned.
+- **Model:** `openai/gpt-oss-120b` — open weights, served on Groq's free tier (Guide §3). Verified end
+  to end; `groq:qwen/qwen3.8-27b` also works. Swappable via `LLM_MODEL`.
+- CAMARA APIs and the ML models are registered as **tools the agent chooses to call** (Guide §11)
+- **Failsafe, two layers** (Guide §11 graceful degradation): if the model stalls without a terminal
+  decision the agent re-asks for it, and failing that the deterministic rule agent finishes the same
+  incident. `AGENT_MODE=rule` skips the model entirely and looks identical on screen.
+
+Every terminal action is a tool with fixed logic, so the model decides *whether* to dispatch, never
+*what* a dispatch does — it cannot invent a technician, a part, or a location.
 
 ---
 

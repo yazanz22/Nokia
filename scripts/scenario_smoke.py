@@ -18,7 +18,9 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND))
 
+import app.agent as agent_mod  # noqa: E402
 from app.agent import run_investigation  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from app.simulator import simulator  # noqa: E402
 from app.store import store  # noqa: E402
 
@@ -55,8 +57,8 @@ async def run_one(scenario: str) -> tuple[bool, str]:
             and wos[0].part != ""
         )
     detail = (
-        f"scenario={scenario} label={label} incident={inc.status} asset={asset.state} "
-        f"work_orders={len(wos)}"
+        f"scenario={scenario} label={label} agent={agent_mod.last_agent_used} "
+        f"incident={inc.status} asset={asset.state} work_orders={len(wos)}"
         + (f" tech={wos[0].technician_name} part={wos[0].part} eta={wos[0].eta_minutes}m" if wos else "")
         + f"\n    resolution: {inc.resolution}"
     )
@@ -64,12 +66,25 @@ async def run_one(scenario: str) -> tuple[bool, str]:
 
 
 async def main() -> int:
+    settings = get_settings()
+    print(f"AGENT_MODE={settings.agent_mode}  NAC_MODE={settings.nac_mode}")
+    if settings.agent_mode == "llm":
+        print(f"LLM_MODEL={settings.llm_model}")
+
     rc = 0
     for scenario in ("blindspot", "hardware"):
         ok, detail = await run_one(scenario)
         print(("PASS " if ok else "FAIL ") + detail)
         if not ok:
             rc = 1
+
+    # A silent fallback to the rule agent still produces correct outcomes, so it
+    # would otherwise read as a clean pass — while the model you intended to demo
+    # is not running at all. Fail loudly instead.
+    if settings.agent_mode == "llm" and "fallback" in agent_mod.last_agent_used:
+        print(f"\nFAIL  AGENT_MODE=llm but the model never ran: {agent_mod.last_agent_error}")
+        rc = 1
+
     print("\nsmoke:", "OK" if rc == 0 else "FAILURES")
     return rc
 
