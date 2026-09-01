@@ -28,6 +28,10 @@ from .seed import build_demo_fleet, build_technicians
 
 class Store:
     def __init__(self) -> None:
+        # Bumped on every reset. An investigation started before a reset must not be
+        # allowed to write its result into the fresh state afterwards — otherwise a
+        # presenter who resets mid-run gets a phantom work order on a clean fleet.
+        self.epoch = 0
         self.assets: dict[str, Asset] = {}
         self.technicians: dict[str, Technician] = {}
         self.incidents: dict[str, Incident] = {}
@@ -44,6 +48,7 @@ class Store:
 
     # ── lifecycle ──────────────────────────────────────────────────────────
     def reset(self) -> None:
+        self.epoch += 1
         self.assets = {a.id: a for a in build_demo_fleet()}
         self.technicians = {t.id: t for t in build_technicians()}
         self.incidents.clear()

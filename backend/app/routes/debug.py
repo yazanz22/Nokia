@@ -24,6 +24,8 @@ async def nac_live_check(asset_id: str | None = None) -> dict:
         raise HTTPException(
             503, "live CAMARA client unavailable — set NAC_API_KEY in .env"
         )
+    if asset_id and asset_id not in store.assets:
+        raise HTTPException(404, f"unknown asset {asset_id}")
     target = asset_id or next(iter(store.assets), "EQ-0001")
     device = settings.device_map().get(target) or settings.nac_default_device
 

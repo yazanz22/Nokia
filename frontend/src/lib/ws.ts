@@ -85,10 +85,14 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
     case "trace_step": {
       const s = ev.payload as TraceStep;
       const prev = state.trace[s.incident_id] ?? [];
-      return {
-        ...state,
-        trace: { ...state.trace, [s.incident_id]: [...prev, s] },
-      };
+      // A reconnect replays the full snapshot, and in-flight events can arrive
+      // again on top of it. Steps are uniquely numbered per incident, so key on
+      // that rather than appending blindly — otherwise the trace shows the same
+      // step twice and React warns about duplicate keys.
+      const i = prev.findIndex((p) => p.step === s.step);
+      const next = i === -1 ? [...prev, s] : prev.map((p, j) => (j === i ? s : p));
+      next.sort((a, b) => a.step - b.step);
+      return { ...state, trace: { ...state.trace, [s.incident_id]: next } };
     }
     case "work_order": {
       const w = ev.payload as WorkOrder;
@@ -138,7 +142,20 @@ export function useLiveState() {
     return () => {
       stopped = true;
       if (timer) window.clearTimeout(timer);
-      ws?.close();
+      if (!ws) return;
+      // React StrictMode mounts effects twice in development, so this cleanup can
+      // land while the socket is still CONNECTING. Closing then throws a console
+      // error and leaves a torn-down socket that still fires onclose, which would
+      // trip the reconnect path. Detach handlers first, and only close once open.
+      ws.onopen = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+      else if (ws.readyState === WebSocket.CONNECTING) {
+        const sock = ws;
+        sock.addEventListener("open", () => sock.close(), { once: true });
+      }
     };
   }, []);
 

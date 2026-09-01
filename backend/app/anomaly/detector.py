@@ -38,6 +38,15 @@ class AnomalyDetector:
             t.cancel()
 
     def reset(self) -> None:
+        """Abandon anything in flight.
+
+        A reset means "start clean". An investigation already running would
+        otherwise finish a few seconds later and write its work order into the
+        fresh state — a phantom dispatch on an untouched fleet.
+        """
+        for task in list(self._agent_tasks):
+            task.cancel()
+        self._agent_tasks.clear()
         self._investigating.clear()
 
     async def _run(self) -> None:

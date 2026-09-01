@@ -22,8 +22,15 @@ last_agent_used: str = "none"
 last_agent_error: str | None = None
 
 
+class StaleInvestigation(RuntimeError):
+    """The fleet was reset while this investigation was in flight."""
+
+
 async def run_investigation(incident_id: str) -> None:
     global last_agent_used, last_agent_error
+    from ..store import store
+
+    epoch = store.epoch
     settings = get_settings()
     if settings.agent_mode == "llm":
         try:
@@ -33,18 +40,30 @@ async def run_investigation(incident_id: str) -> None:
             last_agent_used = "llm"
             last_agent_error = None
             return
+        except StaleInvestigation:
+            log.info("dropping %s — fleet was reset mid-investigation", incident_id)
+            return
         except Exception as exc:  # noqa: BLE001
             last_agent_error = f"{type(exc).__name__}: {exc}"
             log.exception("LLM agent failed for %s — falling back to rule agent", incident_id)
+            if store.epoch != epoch:
+                return
             # Drop the abandoned partial trace. The rule agent re-runs the whole
             # investigation, and leaving both in place shows the operator two
             # interleaved step-1s for a single incident.
-            from ..store import store
-
             store.trace[incident_id] = []
+
+    if store.epoch != epoch:
+        log.info("dropping %s — fleet was reset mid-investigation", incident_id)
+        return
+
     from .rule_agent import run_rule_investigation
 
-    await run_rule_investigation(incident_id)
+    try:
+        await run_rule_investigation(incident_id)
+    except StaleInvestigation:
+        log.info("dropping %s — fleet was reset mid-investigation", incident_id)
+        return
     last_agent_used = "rule (fallback)" if settings.agent_mode == "llm" else "rule"
 
 

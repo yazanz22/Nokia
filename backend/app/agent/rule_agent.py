@@ -98,6 +98,34 @@ async def run_rule_investigation(incident_id: str) -> None:
         ),
     )
 
+    # A dispatch is only justified if the model actually found a fault. Rolling a
+    # truck to a machine that reads healthy is the same wasted journey as rolling one
+    # into a coverage gap — the cause differs, the cost does not.
+    if fault.mode == "NORMAL":
+        recheck_at = schedule_recheck(asset_id, minutes=15)
+        await t.step(
+            "The model finds nothing wrong — every channel is within its nominal band. This reads "
+            "as a transient dropout, not a breakdown. Scheduling a re-check rather than sending "
+            "anyone.",
+            tool="ops.schedule_recheck",
+            args={"asset_id": asset_id, "at": recheck_at.isoformat()},
+            observation="re-check queued; operator notified; no dispatch",
+        )
+        store.set_asset_state(asset_id, "healthy")
+        store.record_blindspot_avoided()
+        store.close_incident(
+            inc,
+            status="no_fault",
+            resolution=(
+                f"No fault found. Network reachable and telemetry nominal at "
+                f"{fault.confidence:.0%} confidence — treated as a transient dropout. "
+                f"Re-check at {recheck_at:%H:%M UTC}. No technician dispatched."
+            ),
+        )
+        store.publish_kpis()
+        log.info("%s resolved as no_fault", incident_id)
+        return
+
     loc = await get_device_location(asset_id)
     await t.step(
         "Pulled network-verified coordinates for dispatch (on-board GPS is dark).",

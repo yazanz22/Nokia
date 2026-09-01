@@ -26,10 +26,20 @@ def list_scenarios() -> dict:
 
 @router.post("/scenarios/inject")
 def inject_scenario(req: InjectRequest) -> dict:
-    if req.asset_id not in store.assets:
+    asset = store.assets.get(req.asset_id)
+    if asset is None:
         raise HTTPException(404, f"unknown asset {req.asset_id}")
     if req.scenario not in SCENARIOS:
         raise HTTPException(422, f"unknown scenario {req.scenario!r}; try {list(SCENARIOS)}")
+    # Injecting over an asset that is already dark would swap the dataset label
+    # underneath a running investigation — the agent would read device status for
+    # one fault and classify a different one. A double-clicked button must not be
+    # able to produce a self-contradicting result on stage.
+    if asset.state != "healthy":
+        raise HTTPException(
+            409,
+            f"{req.asset_id} is already {asset.state} — reset the fleet or pick another asset",
+        )
     label = simulator.inject(req.asset_id, req.scenario)
     return {"ok": True, "asset_id": req.asset_id, "scenario": req.scenario, "dataset_label": label}
 

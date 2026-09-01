@@ -52,7 +52,14 @@ class TelemetrySample(BaseModel):
 
 # ── Incidents ───────────────────────────────────────────────────────────────
 
-IncidentStatus = Literal["open", "investigating", "network_blindspot", "hardware_confirmed", "closed"]
+IncidentStatus = Literal[
+    "open",
+    "investigating",
+    "network_blindspot",     # coverage gap — no dispatch
+    "no_fault",              # network fine, but the machine reads healthy — no dispatch
+    "hardware_confirmed",    # real fault — technician dispatched
+    "closed",
+]
 
 
 class Incident(BaseModel):

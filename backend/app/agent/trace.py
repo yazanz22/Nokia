@@ -19,6 +19,16 @@ class Tracer:
         self.incident_id = incident_id
         self._n = 0
         self._delay = step_delay
+        # Every step is an await point, which makes this the natural place to notice
+        # that the fleet was reset underneath us.
+        self._epoch = store.epoch
+
+    def check_current(self) -> None:
+        """Raise if the fleet has been reset since this investigation began."""
+        from . import StaleInvestigation
+
+        if store.epoch != self._epoch:
+            raise StaleInvestigation(self.incident_id)
 
     async def step(
         self,
@@ -28,6 +38,7 @@ class Tracer:
         args: dict[str, Any] | None = None,
         observation: str = "",
     ) -> None:
+        self.check_current()
         self._n += 1
         store.add_trace_step(
             TraceStep(
@@ -42,3 +53,4 @@ class Tracer:
         # A small pause makes the trace readable as it streams on stage.
         if self._delay:
             await asyncio.sleep(self._delay)
+        self.check_current()

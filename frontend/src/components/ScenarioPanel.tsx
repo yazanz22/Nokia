@@ -7,6 +7,7 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
   const [assetId, setAssetId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>("");
+  const [err, setErr] = useState<string>("");
 
   const target = assetId || eligible[0]?.id || "";
 
@@ -14,11 +15,12 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
     if (!target) return;
     setBusy(true);
     setMsg("");
+    setErr("");
     try {
       const r = await injectScenario(target, scenario);
-      setMsg(`Injected ${scenario} on ${r.asset_id} (dataset row: ${r.dataset_label})`);
+      setMsg(`${r.asset_id} went dark — replaying a real ${r.dataset_label} reading.`);
     } catch (e) {
-      setMsg(`Error: ${String(e)}`);
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -26,9 +28,12 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
 
   const reset = async () => {
     setBusy(true);
+    setErr("");
     try {
       await resetDemo();
-      setMsg("Demo reset — fleet back to nominal.");
+      setMsg("Fleet reset to nominal.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -36,7 +41,8 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
 
   return (
     <div className="scenario">
-      <select value={target} onChange={(e) => setAssetId(e.target.value)}>
+      <span className="field-label">Target asset</span>
+      <select value={target} onChange={(e) => setAssetId(e.target.value)} disabled={busy}>
         {eligible.length === 0 && <option value="">no healthy asset</option>}
         {eligible.map((a) => (
           <option key={a.id} value={a.id}>
@@ -44,24 +50,24 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
           </option>
         ))}
       </select>
-      <div className="row">
-        <button className="primary" disabled={busy || !target} onClick={() => fire("blindspot")}>
+
+      <div className="btn-row">
+        <button className="btn primary" disabled={busy || !target} onClick={() => fire("blindspot")}>
           Cellular blind spot
           <span className="target">{target || "—"}</span>
         </button>
-        <button className="primary" disabled={busy || !target} onClick={() => fire("hardware")}>
+        <button className="btn primary" disabled={busy || !target} onClick={() => fire("hardware")}>
           Hardware fault
           <span className="target">{target || "—"}</span>
         </button>
       </div>
-      <button className="bad" disabled={busy} onClick={reset}>
-        Reset demo
+
+      <button className="btn ghost wide" disabled={busy} onClick={reset}>
+        Reset fleet
       </button>
-      <div className="hint">
-        Injects a real {`{NETWORK_OUTAGE | DEVICE_FAILURE}`} reading from the asset's dataset history,
-        then stops its telemetry. The agent takes over autonomously.
-      </div>
-      {msg && <div className="hint">{msg}</div>}
+
+      {err && <div className="hint err">{err}</div>}
+      {!err && msg && <div className="hint">{msg}</div>}
     </div>
   );
 }

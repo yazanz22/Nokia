@@ -1,16 +1,27 @@
+/** FastAPI puts the human-readable reason in `detail`; surface that, not raw JSON. */
+async function failure(r: Response): Promise<Error> {
+  try {
+    const body = await r.json();
+    if (typeof body?.detail === "string") return new Error(body.detail);
+  } catch {
+    /* not JSON — fall through */
+  }
+  return new Error(`Request failed (${r.status})`);
+}
+
 export async function injectScenario(assetId: string, scenario: string) {
   const r = await fetch("/api/scenarios/inject", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ asset_id: assetId, scenario }),
   });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw await failure(r);
   return r.json();
 }
 
 export async function resetDemo() {
   const r = await fetch("/api/scenarios/reset", { method: "POST" });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw await failure(r);
   return r.json();
 }
 
@@ -22,7 +33,7 @@ export async function getHealth() {
 /** Predictive maintenance: which machines are trending toward failure. */
 export async function getFleetHealth() {
   const r = await fetch("/api/fleet/health");
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw await failure(r);
   return r.json();
 }
 
@@ -30,6 +41,6 @@ export async function getFleetHealth() {
 export async function runLiveCheck(assetId?: string) {
   const q = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : "";
   const r = await fetch(`/api/nac/live-check${q}`, { method: "POST" });
-  if (!r.ok) throw new Error((await r.text()) || "live check failed");
+  if (!r.ok) throw await failure(r);
   return r.json();
 }

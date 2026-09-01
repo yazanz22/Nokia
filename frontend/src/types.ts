@@ -42,6 +42,7 @@ export type IncidentStatus =
   | "open"
   | "investigating"
   | "network_blindspot"
+  | "no_fault"
   | "hardware_confirmed"
   | "closed";
 

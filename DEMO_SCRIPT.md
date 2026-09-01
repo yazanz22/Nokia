@@ -212,7 +212,9 @@ pwsh scripts/dev.ps1
 
 | Symptom | Fix |
 |---|---|
-| Scenario button does nothing | Check the button's target ID. If the dropdown is empty, click **Reset demo**. |
+| Scenario button does nothing | Check the button's target ID. If the dropdown is empty, click **Reset fleet**. |
+| "already silent — reset the fleet" | You fired twice on the same machine. Harmless and deliberate — the second injection is refused so it can't contradict the first. Pick another asset or reset. |
+| Reset clicked mid-investigation | Safe. Anything in flight is abandoned rather than landing on the fresh fleet. |
 | Trace stalls part-way (LLM mode) | It self-corrects: the agent re-asks for the terminal tool call, and failing that the rule agent finishes the incident. Say nothing and let it land. |
 | LLM slow or rate-limited | Say *"switching to our deterministic path"* — set `AGENT_MODE=rule` in `.env`, restart backend. Identical on screen, no model call. |
 | Dashboard shows "reconnecting…" | Backend died. Restart it (below); the dashboard reconnects on its own. |
@@ -281,6 +283,12 @@ and *whether* to spend a dispatch. Pydantic AI driving `openai/gpt-oss-120b` on 
 CAMARA endpoints and the ML models are registered as tools it chooses to invoke. The wording in the
 trace is the model's own — that resolution line about "-127 dBm and 12 neighbour cell failures" was
 written by it, not templated.
+
+**"What stops it dispatching to a machine that's actually fine?"**
+Three outcomes, not two. Coverage gap → no dispatch. Real fault → dispatch. And if the network is
+reachable but the model returns `NORMAL`, the silence was a transient dropout — the agent schedules a
+re-check and dispatches nobody. That last one is enforced inside the dispatch tool itself, so a healthy
+classification can never become a work order regardless of what the model decides.
 
 **"What if the model gets it wrong on stage?"**
 Two guards. Every terminal action is a tool with fixed logic, so the model chooses *whether* to

@@ -156,7 +156,34 @@ def _build_agent():
     async def dispatch_technician(ctx: RunContext[Deps]) -> str:
         """TERMINAL: create a work order for the predicted fault and route the nearest technician."""
         d = ctx.deps
-        fault = d.last_fault or predict_fault(d.asset_id)
+        fault = d.last_fault or predict_fault(d.asset_id, d._reach)  # type: ignore[arg-type]
+
+        # Guard, not a suggestion: a healthy classification can never become a
+        # dispatch, whatever the model decided to call. Terminal tools own this.
+        if getattr(fault, "mode", None) == "NORMAL":
+            recheck_at = schedule_recheck(d.asset_id, minutes=15)
+            await d.tracer.step(
+                "The model finds nothing wrong — this reads as a transient dropout, not a "
+                "breakdown. Re-check scheduled instead of a dispatch.",
+                tool="ops.schedule_recheck",
+                args={"asset_id": d.asset_id, "at": recheck_at.isoformat()},
+                observation="no dispatch",
+            )
+            inc = store.incidents[d.incident_id]
+            store.set_asset_state(d.asset_id, "healthy")
+            store.record_blindspot_avoided()
+            store.close_incident(
+                inc,
+                status="no_fault",
+                resolution=(
+                    f"No fault found (agent). Telemetry nominal at {fault.confidence:.0%} "  # type: ignore[union-attr]
+                    f"confidence — transient dropout. Re-check at {recheck_at:%H:%M UTC}."
+                ),
+            )
+            store.publish_kpis()
+            d.terminal = "no_fault"
+            return "no fault found — dispatch withheld"
+
         loc = d.__dict__.get("_loc") or await get_device_location(d.asset_id)
         wo = create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
         await d.tracer.step(

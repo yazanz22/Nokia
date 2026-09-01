@@ -12,15 +12,13 @@ interface RiskRow {
   vibration_delta: number;
   oil_particle_count: number;
   oil_particle_delta: number;
-  hydraulic_pressure_bar: number;
-  engine_temp_c: number;
 }
 
 /**
  * The proactive half of the system: machines that have NOT failed yet, ranked by how
- * soon the model thinks they will. Every row shows the two channels that actually
+ * soon the model expects them to. Each row shows the two channels that actually
  * moved — vibration and oil particles — because those trend days before engine
- * temperature does, and that gap is the reason this is a model and not a threshold.
+ * temperature does, and that gap is why this is a model and not a threshold.
  */
 export function FleetHealthPanel({ onSelect }: { onSelect: (id: string) => void }) {
   const [rows, setRows] = useState<RiskRow[]>([]);
@@ -44,23 +42,33 @@ export function FleetHealthPanel({ onSelect }: { onSelect: (id: string) => void 
 
   if (!available)
     return (
-      <div className="trace-empty">
-        Forecasting unavailable — run <code>python ml/train.py</code> to build the model.
+      <div className="empty">
+        <strong>Forecasting offline</strong>
+        <span>
+          Run <code>python ml/train.py</code> to build the model.
+        </span>
       </div>
     );
 
   const risky = rows.filter((r) => r.at_risk);
 
   return (
-    <div className="health">
+    <div>
       <div className="health-head">
         <span className="health-count">{atRisk}</span>
         <span className="health-lbl">
-          of {rows.length} machines trending toward failure
+          of {rows.length} machines
+          <br />
+          trending toward failure
         </span>
       </div>
 
-      {risky.length === 0 && <div className="trace-empty">No assets flagged. Fleet healthy.</div>}
+      {risky.length === 0 && (
+        <div className="empty">
+          <strong>Fleet healthy</strong>
+          <span>No machine is showing a degradation trend.</span>
+        </div>
+      )}
 
       {risky.map((r) => (
         <div className="risk-row" key={r.asset_id} onClick={() => onSelect(r.asset_id)}>
@@ -72,20 +80,18 @@ export function FleetHealthPanel({ onSelect }: { onSelect: (id: string) => void 
           </div>
           <div className="risk-sub">{r.asset_id}</div>
           <div className="risk-signals">
-            <Signal name="vibration" value={`${r.vibration_mm_s} mm/s`} delta={r.vibration_delta} />
-            <Signal
-              name="oil particles"
-              value={`${r.oil_particle_count}`}
-              delta={r.oil_particle_delta}
-            />
+            <Signal name="vibration" value={`${r.vibration_mm_s}`} delta={r.vibration_delta} />
+            <Signal name="oil particles" value={`${r.oil_particle_count}`} delta={r.oil_particle_delta} />
           </div>
         </div>
       ))}
 
-      <div className="hint">
-        Ranked by the tightest horizon the model clears at 24 / 48 / 72 h. Vibration and
-        oil-particle trends move days before engine temperature does.
-      </div>
+      {risky.length > 0 && (
+        <div className="hint">
+          Ranked by the tightest horizon the model clears at 24 / 48 / 72 h. Vibration and
+          oil-particle trends move days before engine temperature does.
+        </div>
+      )}
     </div>
   );
 }
@@ -97,7 +103,8 @@ function Signal({ name, value, delta }: { name: string; value: string; delta: nu
       <span className="sig-name">{name}</span>
       <span className="sig-val">{value}</span>
       <span className={`sig-delta ${up ? "up" : ""}`}>
-        {up ? "▲" : "▼"} {Math.abs(delta)}
+        {up ? "▲" : "▼"}
+        {Math.abs(delta)}
       </span>
     </div>
   );
