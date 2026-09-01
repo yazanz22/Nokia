@@ -105,11 +105,23 @@ body {
 }
 
 /* main grid */
+/* Four columns: the map anchors the left, controls and the predictive view sit
+   together, incidents and their work orders stay adjacent, and the agent trace gets
+   a column to itself — it is the thing people are meant to read during the demo. */
 .grid {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1fr;
+  grid-template-columns: 1.35fr 1fr 1fr 1.1fr;
   gap: 10px;
   min-height: 0;
+}
+@media (max-width: 1400px) {
+  .grid {
+    grid-template-columns: 1.2fr 1fr 1fr;
+  }
+  .grid .col.col-trace {
+    grid-column: span 3;
+    max-height: 260px;
+  }
 }
 .col {
   display: flex;
@@ -225,6 +237,105 @@ body {
 .hint {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* predictive maintenance */
+.health {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.health-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+.health-count {
+  font-size: 26px;
+  font-weight: 650;
+  color: var(--warn);
+  line-height: 1;
+}
+.health-lbl {
+  font-size: 12px;
+  color: var(--muted);
+}
+.risk-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 7px 9px;
+  cursor: pointer;
+}
+.risk-row:hover {
+  filter: brightness(1.12);
+}
+.risk-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.risk-id {
+  font-weight: 600;
+  font-size: 13px;
+}
+.risk-sub {
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.horizon {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.horizon.urgent {
+  color: var(--bad);
+  border-color: #5a2b32;
+  background: #241419;
+}
+.horizon.soon {
+  color: var(--warn);
+  border-color: #6a521f;
+  background: #241f12;
+}
+.horizon.watch {
+  color: var(--accent);
+  border-color: #1f4f79;
+  background: #101d2c;
+}
+.risk-signals {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+}
+.sig {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.sig-name {
+  color: var(--muted);
+}
+.sig-val {
+  font-variant-numeric: tabular-nums;
+}
+.sig-delta {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.sig-delta.up {
+  color: var(--warn);
 }
 
 /* live CAMARA panel */

@@ -13,7 +13,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Repo root = .../Nokia  (this file is .../Nokia/backend/app/config.py)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_PATH = REPO_ROOT / "data" / "dataset1.csv"
+HISTORY_PATH = REPO_ROOT / "data" / "telemetry_history.csv"
 MODEL_PATH = REPO_ROOT / "ml" / "model.pkl"
+FORECAST_MODEL_PATH = REPO_ROOT / "ml" / "forecast_model.pkl"
 
 
 class Settings(BaseSettings):
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
     sim_tick_seconds: float = 2.0
     silent_threshold_seconds: int = 30
     demo_fleet_size: int = 30
+    # "Now" for the predictive-maintenance view: telemetry history is replayed up to
+    # this instant, so the fleet shows a mix of healthy and mid-degradation machines
+    # rather than only ones that have already died.
+    forecast_as_of: str = "2026-08-18T06:00:00"
 
     def device_map(self) -> dict[str, str]:
         """Parse NAC_DEVICE_MAP into {asset_id: phone_number}."""

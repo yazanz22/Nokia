@@ -1,0 +1,91 @@
+{
+  "diagnostic": {
+    "rows_train": 11209,
+    "rows_test": 3791,
+    "accuracy": 0.9517,
+    "macro_f1": 0.9068,
+    "per_class_f1": {
+      "DEVICE_FAILURE": 1.0,
+      "NETWORK_OUTAGE": 1.0,
+      "NORMAL": 0.9618,
+      "SENSOR_FAILURE": 0.6654
+    },
+    "features": [
+      "telemetry_age_sec",
+      "signal_strength_dbm",
+      "neighbor_fail_count",
+      "engine_temp_c",
+      "reachable"
+    ],
+    "classes": [
+      "NORMAL",
+      "NETWORK_OUTAGE",
+      "DEVICE_FAILURE",
+      "SENSOR_FAILURE"
+    ]
+  },
+  "prognostic": {
+    "horizons_hours": [
+      24.0,
+      48.0,
+      72.0
+    ],
+    "windows_train": 39371,
+    "windows_test": 12975,
+    "roc_auc": 0.9999,
+    "pr_auc": 0.9992,
+    "horizon_hours": 72.0,
+    "window_readings": 8,
+    "temperature_baseline_c": 94.57,
+    "detection_by_horizon": {
+      "96-120h": {
+        "model_detection_rate": 0.0,
+        "temperature_rule_detection_rate": 0.022,
+        "n_windows": 590
+      },
+      "72-96h": {
+        "model_detection_rate": 0.0412,
+        "temperature_rule_detection_rate": 0.0132,
+        "n_windows": 607
+      },
+      "48-72h": {
+        "model_detection_rate": 0.9391,
+        "temperature_rule_detection_rate": 0.0197,
+        "n_windows": 608
+      },
+      "24-48h": {
+        "model_detection_rate": 1.0,
+        "temperature_rule_detection_rate": 0.0115,
+        "n_windows": 608
+      },
+      "0-24h": {
+        "model_detection_rate": 1.0,
+        "temperature_rule_detection_rate": 0.176,
+        "n_windows": 608
+      }
+    },
+    "features": [
+      "vibration_mm_s_last",
+      "vibration_mm_s_mean",
+      "vibration_mm_s_std",
+      "vibration_mm_s_slope",
+      "vibration_mm_s_delta",
+      "oil_particle_count_last",
+      "oil_particle_count_mean",
+      "oil_particle_count_std",
+      "oil_particle_count_slope",
+      "oil_particle_count_delta",
+      "hydraulic_pressure_bar_last",
+      "hydraulic_pressure_bar_mean",
+      "hydraulic_pressure_bar_std",
+      "hydraulic_pressure_bar_slope",
+      "hydraulic_pressure_bar_delta",
+      "engine_temp_c_last",
+      "engine_temp_c_mean",
+      "engine_temp_c_std",
+      "engine_temp_c_slope",
+      "engine_temp_c_delta",
+      "engine_hours"
+    ]
+  }
+}

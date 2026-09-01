@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AgentTrace } from "./components/AgentTrace";
 import { AssetDrawer } from "./components/AssetDrawer";
+import { FleetHealthPanel } from "./components/FleetHealthPanel";
 import { FleetMap } from "./components/FleetMap";
 import { IncidentFeed } from "./components/IncidentFeed";
 import { KpiBar } from "./components/KpiBar";
@@ -96,6 +97,15 @@ export default function App() {
             </div>
           </div>
           <div className="panel grow">
+            <h2>Predictive maintenance</h2>
+            <div className="body">
+              <FleetHealthPanel onSelect={setSelectedAsset} />
+            </div>
+          </div>
+        </div>
+
+        <div className="col">
+          <div className="panel grow">
             <h2>Incident feed</h2>
             <div className="body">
               <IncidentFeed
@@ -105,16 +115,7 @@ export default function App() {
               />
             </div>
           </div>
-        </div>
-
-        <div className="col">
           <div className="panel grow">
-            <h2>Agent reasoning trace {traceIncidentId ? `· ${traceIncidentId}` : ""}</h2>
-            <div className="body">
-              <AgentTrace steps={traceSteps} />
-            </div>
-          </div>
-          <div className="panel" style={{ maxHeight: "42%" }}>
             <h2>Work orders</h2>
             <div className="body">
               {traceWorkOrders.length === 0 && workOrders.length === 0 ? (
@@ -124,6 +125,15 @@ export default function App() {
                   <WorkOrderCard key={w.id} wo={w} />
                 ))
               )}
+            </div>
+          </div>
+        </div>
+
+        <div className="col col-trace">
+          <div className="panel grow">
+            <h2>Agent reasoning trace {traceIncidentId ? `· ${traceIncidentId}` : ""}</h2>
+            <div className="body">
+              <AgentTrace steps={traceSteps} />
             </div>
           </div>
         </div>

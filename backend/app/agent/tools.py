@@ -52,10 +52,41 @@ def assess_coverage_gap(reach: Reachability) -> tuple[bool, str]:
     return False, "Network signal inconclusive; treating as a possible hardware fault pending ML review."
 
 
-def predict_fault(asset_id: str) -> FaultPrediction:
-    sample = store.latest_telemetry.get(asset_id)
-    if sample is None:
-        sample = TelemetrySample(asset_id=asset_id)
+def predict_fault(asset_id: str, reach: Reachability | None = None) -> FaultPrediction:
+    """Classify the fault from what the agent knows *now*.
+
+    The last frame a machine transmitted is stamped reachable-and-fresh — it arrived,
+    after all. But by the time we classify, the machine has gone quiet, and that
+    silence is itself evidence. So we take the physical channels from the last frame
+    and overlay the current network reality: whether CAMARA can still see the device,
+    and how long it has actually been dark.
+
+    Without this the model is asked about a state that never occurs in training
+    (a red-hot engine on a device that is still answering) and extrapolates badly.
+    """
+    last = store.latest_telemetry.get(asset_id)
+    if last is None:
+        last = TelemetrySample(asset_id=asset_id)
+
+    asset = store.assets.get(asset_id)
+    silence_s = (utcnow() - asset.last_seen).total_seconds() if asset else last.telemetry_age_sec
+
+    sample = last.model_copy(
+        update={
+            "reachable": reach.connected if reach is not None else last.reachable,
+            "telemetry_age_sec": max(last.telemetry_age_sec, silence_s),
+            "signal_strength_dbm": (
+                reach.signal_strength_dbm
+                if reach is not None and reach.signal_strength_dbm is not None
+                else last.signal_strength_dbm
+            ),
+            "neighbor_fail_count": (
+                reach.neighbor_fail_count
+                if reach is not None and reach.neighbor_fail_count is not None
+                else last.neighbor_fail_count
+            ),
+        }
+    )
     return fault_model.predict(asset_id, sample)
 
 

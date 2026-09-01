@@ -74,7 +74,7 @@ def _degradation(progress: float) -> tuple[float, float, float, float]:
 def generate(
     n_assets: int = 500,
     days: int = 30,
-    failure_rate: float = 0.18,
+    failure_rate: float = 0.16,
     seed: int = 7,
 ) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
@@ -96,16 +96,36 @@ def generate(
         temp_bias = float(rng.normal(0, 3.0))
         engine_hours = float(rng.uniform(400, 14_000))
 
-        # Does this machine fail inside the window, and when?
-        fails = py_rng.random() < failure_rate
-        # Place the failure so the full ramp is visible in-window.
-        fail_idx = (
-            py_rng.randint(int(DEGRADE_DAYS * READINGS_PER_DAY) + 2, n_steps - 1)
-            if fails
-            else None
-        )
+        # Failure cycles. A machine that fails gets repaired and goes back to work,
+        # so one asset can run through several degrade -> fail -> repair cycles in a
+        # 30-day window. Modelling that matters: with a single terminal failure per
+        # asset, almost nothing is ever caught mid-ramp, which is exactly the state
+        # the forecasting model exists to detect.
+        ramp_steps = int(DEGRADE_DAYS * READINGS_PER_DAY)
+        repair_steps = READINGS_PER_DAY * 2  # ~2 days out of service
+        fail_points: list[int] = []
+        # Start each machine at its own random offset and advance by a jittered
+        # stride, otherwise every asset fails on the same grid of indices and the
+        # fleet's time-to-failure values come out suspiciously identical.
+        cursor = ramp_steps + 2 + py_rng.randint(0, ramp_steps)
+        while cursor < n_steps:
+            if py_rng.random() < failure_rate:
+                fail_points.append(cursor)
+                cursor += repair_steps + ramp_steps + py_rng.randint(0, ramp_steps)
+            else:
+                cursor += py_rng.randint(2, max(3, ramp_steps))
+        # Steps during which the machine is in the workshop, emitting nothing.
+        down = {i for f in fail_points for i in range(f + 1, f + 1 + repair_steps)}
+
+        def _next_failure(i: int) -> int | None:
+            for f in fail_points:
+                if f >= i:
+                    return f
+            return None
 
         for i, ts in enumerate(stamps):
+            if i in down:
+                continue
             # Duty cycle — machines work days, idle nights.
             hour = ts.hour
             duty = 1.0 if 6 <= hour < 18 else 0.55
@@ -118,8 +138,9 @@ def generate(
             temp = BASE_TEMP + temp_bias + duty * 6.0 + drift + float(rng.normal(0, 2.1))
 
             hours_to_failure = None
-            if fail_idx is not None and i <= fail_idx:
-                hours_left = (fail_idx - i) * (24 / READINGS_PER_DAY)
+            nxt = _next_failure(i)
+            if nxt is not None:
+                hours_left = (nxt - i) * (24 / READINGS_PER_DAY)
                 hours_to_failure = hours_left
                 ramp_hours = DEGRADE_DAYS * 24
                 if hours_left <= ramp_hours:
@@ -129,10 +150,6 @@ def generate(
                     part += d_part
                     press += d_press
                     temp += d_temp
-
-            # After it fails the machine is dark — emit nothing.
-            if fail_idx is not None and i > fail_idx:
-                break
 
             rows.append(
                 {

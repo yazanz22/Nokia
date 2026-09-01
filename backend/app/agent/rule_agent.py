@@ -87,7 +87,7 @@ async def run_rule_investigation(incident_id: str) -> None:
         "Network checks out, so the silence is the equipment. Running the ML fault model on the "
         "last telemetry frame before the uplink dropped.",
     )
-    fault = predict_fault(asset_id)
+    fault = predict_fault(asset_id, reach)
     await t.step(
         "ML fault classification complete.",
         tool="ml.predict_fault",

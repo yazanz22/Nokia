@@ -96,7 +96,7 @@ def _build_agent():
     @agent.tool
     async def predict_fault_tool(ctx: RunContext[Deps]) -> str:
         """Run the ML fault classifier on the asset's last telemetry frame."""
-        fault = predict_fault(ctx.deps.asset_id)
+        fault = predict_fault(ctx.deps.asset_id, ctx.deps._reach)  # type: ignore[arg-type]
         ctx.deps.last_fault = fault
         await ctx.deps.tracer.step(
             "Ran the ML fault classifier.",

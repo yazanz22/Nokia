@@ -39,6 +39,26 @@ The dataset is synthetic — `data/dataset_builder.py` generates it (500 assets,
 signatures; `NORMAL` and `SENSOR_FAILURE` deliberately overlap so the ML task stays honest). The
 committed `data/dataset1.csv` is the canonical copy everything is built and tested against.
 
+## Seeing it coming
+
+Diagnosis is only half of it. `data/telemetry_history.csv` (from `data/history_builder.py`) is 30 days
+of continuous per-machine telemetry with a physically ordered degradation ramp: bearing wear lifts
+**vibration** and **oil-particle count** first, seals let **hydraulic pressure** sag next, and
+**engine temperature** — the one signal a threshold alarm would watch — only spikes in the final hours.
+
+So the forecasting model is scored on warning time, not accuracy:
+
+| hours before failure | this model | engine-temp threshold |
+|---|---|---|
+| 48–72 h | **94%** | 2% |
+| 24–48 h | **100%** | 1% |
+| 0–24 h | 100% | 18% |
+
+It answers *how soon* by asking the same question at 24 / 48 / 72 h and reporting the tightest horizon
+it clears — the estimate comes from the models, never from the label. On synthetic data the AUC is
+~1.0, which is why we don't quote it; the warning-time gap is the claim, and it follows from the
+physics being modelled rather than the classifier being clever.
+
 ---
 
 ## Architecture
@@ -49,7 +69,8 @@ committed `data/dataset1.csv` is the canonical copy everything is built and test
 | **Anomaly detector** | Flags a lost heartbeat, opens an incident, dispatches the agent | `backend/app/anomaly/` |
 | **AI agent** | Autonomous closed-loop investigation; emits a step-by-step reasoning trace | `backend/app/agent/` |
 | **Network as Code adapter** | CAMARA Device Status + Location Retrieval; live sandbox **or** dataset-backed mock, with mock-on-error fallback | `backend/app/nac/` |
-| **ML fault model** | 4-class classifier over telemetry features (`ml/train.py` → `ml/model.pkl`) | `backend/app/ml/`, `ml/` |
+| **ML — diagnosis** | 4-class classifier, "what broke?" (`ml/train.py` → `ml/model.pkl`) | `backend/app/ml/client.py` |
+| **ML — prognosis** | Multi-horizon failure forecasting, "what is *about* to break?" (`ml/forecast_model.pkl`) | `backend/app/ml/forecast.py` |
 | **Operator dashboard** | Fleet map, KPIs, incident feed, live agent trace, work orders, scenario control | `frontend/` |
 
 ### AI agent layer — Resource & Tooling Guide compliant
@@ -105,21 +126,27 @@ Then open the dashboard, pick an asset in **Scenario control**, and hit **Cellul
 ## Verify
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest -q          # unit + closed-loop tests
-python scripts/scenario_smoke.py                          # headless end-to-end, both scenarios
-curl "http://127.0.0.1:8000/api/debug/nac?asset_id=EQ-0005"   # prove a Network-as-Code call
+cd backend && .venv/Scripts/python -m pytest -q      # unit + closed-loop tests
+python scripts/scenario_smoke.py                      # headless end-to-end, both scenarios
+python ml/train.py                                    # both models + ml/metrics.json
+curl -XPOST "http://127.0.0.1:8000/api/nac/live-check"   # a real call to the Nokia sandbox
+curl "http://127.0.0.1:8000/api/fleet/health"            # predictive maintenance view
 ```
 
 ---
 
 ## Status
 
-Prototype for the Phase 2 live demo. Working end to end in `mock` mode: simulator → anomaly detection →
-agent (rule mode) → CAMARA Device Status → branch → ML → CAMARA Location Retrieval → work order +
-technician routing → live dashboard.
+Prototype for the Phase 2 live demo. Working end to end: simulator → anomaly detection → agent →
+CAMARA Device Reachability Status → branch → ML → CAMARA Location Retrieval → work order + technician
+routing → live dashboard, alongside continuous failure forecasting across the fleet.
 
-**Next:** train `ml/model.pkl` on `data/dataset1.csv`, wire `AGENT_MODE=llm` (Pydantic AI + Groq),
-connect the live Nokia sandbox, demo-script rehearsal + backup recording.
+Live CAMARA calls against the Nokia sandbox are verified and exposed in the dashboard. The fleet itself
+is simulated and we say so: the sandbox issues a handful of test SIMs provisioned in Hungary, so they
+cannot stand in for thirty machines on a NEOM site.
+
+**Next:** exercise `AGENT_MODE=llm` (Pydantic AI + Groq — needs `GROQ_API_KEY`), rehearse against
+[DEMO_SCRIPT.md](DEMO_SCRIPT.md), record the backup video.
 
 ## Team FILO
 

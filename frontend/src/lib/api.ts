@@ -19,6 +19,13 @@ export async function getHealth() {
   return r.json();
 }
 
+/** Predictive maintenance: which machines are trending toward failure. */
+export async function getFleetHealth() {
+  const r = await fetch("/api/fleet/health");
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 /** Fires a genuine CAMARA call at the Nokia sandbox, regardless of NAC_MODE. */
 export async function runLiveCheck(assetId?: string) {
   const q = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : "";

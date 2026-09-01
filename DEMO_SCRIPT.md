@@ -1,7 +1,11 @@
 # Live Demo Script — FILO Asset Sentinel
 
-Phase 2 live demo, MENA Open Gateway Hackathon. **Target: 4 min 30 s**, leaving buffer inside a 5-minute
-slot. Two people: a **driver** (laptop) and a **narrator** (speaks). Never the same person.
+Phase 2 live demo, MENA Open Gateway Hackathon. **Target: 5 min**, tight. Two people: a **driver**
+(laptop) and a **narrator** (speaks). Never the same person.
+
+Three things to land, in this order: **we don't send trucks we don't need to** (blind spot), **when we
+do send one it's right first time** (hardware), and **we see failures coming days out** (predictive).
+The live CAMARA panel is the proof that the network layer is real, held for the end or for Q&A.
 
 Everything below was verified end to end on 2026-09-01 against `main`. Numbers marked ≈ vary slightly
 per run — **read what's on screen, don't recite from memory.**
@@ -30,7 +34,10 @@ does narrative work for you.
 pwsh scripts/dev.ps1
 ```
 
-- [ ] Backend health returns your intended modes — `curl http://127.0.0.1:8000/api/debug/health`
+- [ ] Backend health returns your intended modes and `"ml_backend": "trained"` —
+      `curl http://127.0.0.1:8000/api/debug/health`. If it says `rule-based`, run `python ml/train.py`.
+- [ ] `"live_camara_available": true` in that same response, or the live-proof panel will error
+- [ ] **Predictive maintenance** panel shows 4 at-risk machines (not "unavailable")
 - [ ] Dashboard open at `http://127.0.0.1:5173`, browser zoomed so the **three columns** all fit
 - [ ] **Reset demo** clicked — KPI bar reads `100.0%` / `30/30` / all zeros
 - [ ] Notifications off, Do Not Disturb on, Slack and mail closed
@@ -113,7 +120,7 @@ pwsh scripts/dev.ps1
 > network here is perfectly healthy — so the silence is the machine itself.
 >
 > Now the agent brings in the ML model, trained on our fleet telemetry. Engine temperature far above
-> the safe envelope while the radio link was fine: **device failure, 93% confidence** — a hydraulic
+> the safe envelope while the radio link was fine: **device failure, 99% confidence** — a hydraulic
 > pump."
 
 **Driver:** as the location step lands, point at the map — the dispatch route line draws itself.
@@ -132,22 +139,58 @@ pwsh scripts/dev.ps1
 
 ---
 
-## 3:20 – 4:00 · The numbers, and how it works
+## 3:20 – 4:00 · Don't wait for the machine to stop
+
+**Driver:** point at the **Predictive maintenance** panel. Don't click anything — it's already scored.
+
+> "Everything so far was reactive: something went quiet, we worked out why. But the best dispatch is
+> the one you schedule.
+>
+> This panel is the same fleet, scored continuously — four machines that have **not failed**, ranked by
+> how soon the model thinks they will. Crane CR-46, under a day. Excavator EX-97, about three days.
+>
+> And look at *why*: vibration up, oil-particle count up. Those are bearing wear and metal in the oil —
+> they move **days** before anything gets hot. Engine temperature, the signal a threshold alarm would
+> watch, doesn't move until the last few hours.
+>
+> Measured on held-out machines: two to three days before failure, our model catches **94%** of them.
+> A temperature threshold catches **2%**. That's the difference between scheduling a repair and
+> recovering from a breakdown."
+
+---
+
+## 4:00 – 4:20 · Proof the network layer is real
+
+**Driver:** click **Run live CAMARA check**.
+
+> "One last thing. That fleet is a simulation of a NEOM-scale site — we can't put thirty machines in the
+> desert this week. But the network layer is not simulated."
+
+*(the panel fills in — real host, real device, latencies)*
+
+> "That's a live call to Nokia Network as Code, right now. Device Reachability Status, Location
+> Retrieval, round trip in under a second. The sandbox test SIM is provisioned in Hungary, which is why
+> it reports Budapest — so the fleet above runs on replayed telemetry through the identical CAMARA
+> contract. Same code path, one environment variable apart."
+
+---
+
+## 4:20 – 4:40 · The numbers, and how it works
 
 **Driver:** point at the KPI bar — it now reads **1 false dispatch avoided · 1 dispatch issued**.
 
 > "Same symptom, two opposite correct decisions. That's the whole product.
 >
 > Underneath: an AI agent with the CAMARA APIs registered as **tools it decides when to call** — not
-> buttons a person presses. Device Status is the network truth layer. Location Retrieval is the
-> dispatch layer. Both through Nokia Network as Code, GSMA Open Gateway compliant.
+> buttons a person presses. Device Reachability Status is the network truth layer. Location Retrieval
+> is the dispatch layer. Both through Nokia Network as Code, GSMA Open Gateway compliant.
 >
 > At fleet scale that's **40% fewer wasted dispatches, 25% less downtime, 15% off operating cost** —
 > and measurably fewer crew-hours spent driving across the desert in extreme heat."
 
 ---
 
-## 4:00 – 4:30 · Close
+## 4:40 – 5:00 · Close
 
 > "Every alert is validated against network truth before anyone is sent anywhere. It scales across
 > NEOM, Red Sea Global, Qiddiya, Masdar — anywhere assets outrun coverage.
@@ -190,18 +233,31 @@ Then restart via `scripts/dev.ps1`.
 ## Q&A — likely questions
 
 **"Is this really calling Nokia's API, or is it simulated?"**
-Answer honestly, and know which mode you're in before you're asked. In `live` mode these are real
-sandbox calls — offer to show `GET /api/debug/nac?asset_id=EQ-0180`, which returns
-`effective_source: "live"`. In `mock` mode: the adapter is the same code path against the same CAMARA
-contract; we swap one environment variable, and we fall back to cached data automatically if the venue
-network drops — which is exactly what you'd want in production too.
+Both, and the dashboard shows the seam. Hit **Run live CAMARA check** — that is a real call to
+`network-as-code.p-eu.apihub.nokia.io`, Device Reachability Status v1 and Location Retrieval v0, with
+the latency on screen. The *fleet* is simulated, because the sandbox issues a handful of test SIMs that
+sit in Hungary and always report reachable; they can't stand in for thirty machines across a desert
+site, and a live location lookup would route every dispatch to Budapest. Same adapter, same CAMARA
+contract, one environment variable apart. Never claim the fleet is live.
 
 **"Where did the training data come from?"**
-Synthetic, generated by `data/dataset_builder.py` — 15,000 readings across 500 assets. We model four
-states with distinct network signatures. Note the honest part: `NORMAL` and `SENSOR_FAILURE` deliberately
-overlap, so the model does *not* score 100% — it genuinely confuses some sensor faults with healthy
-readings. What it separates cleanly is the decision that actually matters: coverage gap vs hardware
-failure.
+Synthetic, and we'll show you the generators. `data/dataset_builder.py` makes the 15,000 diagnostic
+readings; `data/history_builder.py` makes 30 days of continuous per-machine telemetry for the
+forecasting model. The honest part: in the diagnostic set `NORMAL` and `SENSOR_FAILURE` deliberately
+overlap, so the model scores **95.2%**, not 100% — it genuinely confuses about half the sensor faults
+with healthy readings, and we know exactly why. What it separates cleanly is the decision that actually
+matters: coverage gap versus hardware failure.
+
+**"Your forecasting AUC is basically 1.0 — isn't that too good?"**
+On synthetic data, yes, AUC is the wrong number to judge us on and we don't lead with it. The number we
+report is **warning time against the obvious baseline**: at two to three days out the model flags 94%
+of failures, a temperature threshold flags 2%. That gap is a property of the physics we modelled —
+vibration and oil-particle trends lead engine temperature by days — not of the classifier being clever.
+On real fleet data the absolute numbers move; the ordering of those signals doesn't.
+
+**"How do you get 'about three days' from a yes/no classifier?"**
+We don't. We train the same question at 24, 48 and 72 hours and report the tightest horizon that
+clears threshold. The estimate comes from the models, never from the label.
 
 **"Why not just use GPS from the machine?"**
 Because the machine is the thing that went silent. If the telemetry uplink is down, its GPS is down
