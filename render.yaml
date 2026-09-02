@@ -1,0 +1,25 @@
+# One-click deploy to Render (free tier). Connect the GitHub repo in the Render
+# dashboard and it picks this up automatically.
+#
+# Note on the free plan: the service sleeps after ~15 minutes idle and takes about
+# a minute to wake. Open the demo link a couple of minutes before anyone judges it.
+services:
+  - type: web
+    name: filo-asset-sentinel
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # The public demo runs the deterministic agent against dataset-backed CAMARA:
+      # no keys on a public URL, no free-tier quota to burn, and the flow judges see
+      # is identical. Set these to llm / live in the dashboard to enable the rest.
+      - key: AGENT_MODE
+        value: rule
+      - key: NAC_MODE
+        value: mock
+      - key: SILENT_THRESHOLD_SECONDS
+        value: "12"
+      # Add in the Render dashboard (never commit these):
+      #   GROQ_API_KEY   -> enables AGENT_MODE=llm
+      #   NAC_API_KEY    -> enables NAC_MODE=live and the live CAMARA panel

@@ -8,13 +8,16 @@ operator dashboard.
 from __future__ import annotations
 
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .anomaly import detector
-from .config import get_settings
+from .config import REPO_ROOT, get_settings
 from .events import bus
 from .models import WsEvent
 from .routes import api_router
@@ -77,6 +80,33 @@ async def ws(websocket: WebSocket) -> None:
         log.exception("websocket error")
     finally:
         bus.unsubscribe(sub)
+
+
+# ── static dashboard ─────────────────────────────────────────────────────────
+# In development the dashboard is served by Vite on :5173 and proxies /api here.
+# For a deployed single-service demo we serve the built bundle ourselves, so the
+# whole thing is one container behind one URL.
+# Python resolves MIME types from the Windows registry, where .js is routinely
+# registered as text/plain. Browsers refuse to execute an ES module served with the
+# wrong type, so the bundle downloads and is silently ignored — a blank page with no
+# error. Pin the types we serve rather than trusting the host.
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+
+_DIST = REPO_ROOT / "frontend" / "dist"
+
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def _index() -> FileResponse:
+        return FileResponse(_DIST / "index.html")
+
+    log.info("serving dashboard from %s", _DIST)
+else:
+    log.info("no frontend build at %s — run `npm run build` for single-service mode", _DIST)
 
 
 def run() -> None:

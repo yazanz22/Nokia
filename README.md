@@ -22,22 +22,40 @@ Every step of the agent's reasoning is streamed to a live operator dashboard.
 
 ---
 
-## Why the network check matters
+## Why the network call is irreplaceable
 
-In the project dataset (`data/dataset1.csv`, 15k readings, 500 assets, NEOM / Gulf of Aqaba), **both**
-a coverage outage and a dead engine present as `reachable = false`. Device Status alone is ambiguous.
-The agent disambiguates with the extra signals CAMARA / connectivity-insights expose:
+When an asset stops sending telemetry you cannot work out *why* from the asset — it
+stopped sending telemetry. In our fleet data the true cause of a silent-asset event
+splits almost evenly:
 
-| Situation | reachable | serving-cell signal | neighbour-cell failures | engine temp | agent decision |
-|---|---|---|---|---|---|
-| `NETWORK_OUTAGE` | false | ≈ −120 dBm (weak) | 3–14 | normal | **coverage gap — no dispatch** |
-| `DEVICE_FAILURE` | false | ≈ −50 dBm (strong) | 0 | 105–129 °C | **hardware fault — dispatch** |
-| `SENSOR_FAILURE` | true | normal | 0 | normal | sensor kit — cheap dispatch |
-| `NORMAL` | true | normal | 0 | normal | — |
+| True cause | Share of silent-asset events |
+|---|---|
+| Hardware failure | 51% |
+| Network outage | 49% |
 
-The dataset is synthetic — `data/dataset_builder.py` generates it (500 assets, 4 labelled signal
-signatures; `NORMAL` and `SENSOR_FAILURE` deliberately overlap so the ML task stays honest). The
-committed `data/dataset1.csv` is the canonical copy everything is built and tested against.
+Roughly half of every "asset went dark" alert is a truck that never needed to leave
+the yard, and **no amount of on-board sensing can tell you which half you are looking
+at.** Only the operator's network knows whether it dropped the device. That is what
+CAMARA Device Reachability Status provides, and it is the part of this system nothing
+else can substitute for.
+
+`NOT_CONNECTED` is still ambiguous on its own — it is what a dead engine and a
+coverage hole both look like. The agent resolves it using signals the device cannot
+report:
+
+| Observation | Reading | Action |
+|---|---|---|
+| Unreachable · weak cell (≤ −105 dBm) · neighbour cells failing | coverage gap | re-check, **no dispatch** |
+| Unreachable · **strong** cell · no neighbour failures | network is fine, so the machine died | classify fault → dispatch |
+| Reachable · telemetry nominal | transient dropout | re-check, **no dispatch** |
+| Reachable · telemetry age drifting | sensor fault | cheap sensor-kit dispatch |
+
+The second row is the one a naive reachability check gets exactly backwards.
+
+Both datasets are synthetic and their generators are in the repo
+(`data/dataset_builder.py`, `data/history_builder.py`). Numbers computed from them
+describe how the system behaves — they are not evidence about the world, and we do
+not present them as such.
 
 ## Seeing it coming
 
@@ -122,9 +140,37 @@ Then open the dashboard, pick an asset in **Scenario control**, and hit **Cellul
 | `NAC_MODE` | `mock` | `mock` (dataset-backed) or `live` (Nokia sandbox, mock-on-error fallback) |
 | `NAC_API_KEY`, `NAC_DEVICE_MAP` | — | Sandbox key + `EQ-0007:+3197...,` asset→MSISDN map for `live` |
 | `AGENT_MODE` | `rule` | `rule` (deterministic) or `llm` (Pydantic AI + `LLM_MODEL`) |
-| `LLM_MODEL` | `groq:llama-3.3-70b-versatile` | Pydantic AI model string |
+| `LLM_MODEL` | `groq:openai/gpt-oss-120b` | Pydantic AI model string; must support tool calling |
 | `GROQ_API_KEY` | — | Required for `AGENT_MODE=llm` with a Groq model |
 | `SILENT_THRESHOLD_SECONDS` | `30` | Heartbeat age before an asset is flagged silent |
+
+---
+
+## Deploy it
+
+The whole thing runs as **one container**: the image builds the dashboard and FastAPI
+serves it, so there is a single URL and no separate frontend host.
+
+```bash
+docker build -t filo-sentinel .
+docker run -p 8000:8000 filo-sentinel     # → http://localhost:8000
+```
+
+`render.yaml` is included for a one-click Render deploy (free tier — the service
+sleeps after ~15 min idle and takes about a minute to wake, so open the link a few
+minutes before anyone looks at it).
+
+The public deployment defaults to `AGENT_MODE=rule` and `NAC_MODE=mock`: no API keys
+sitting on a public URL, no free-tier quota to burn, and the flow is identical. Set
+`GROQ_API_KEY` / `NAC_API_KEY` in the host's dashboard to switch the live LLM agent
+and live CAMARA calls on.
+
+To run single-service locally without Docker:
+
+```bash
+cd frontend && npm run build          # emits frontend/dist
+cd ../backend && .venv/Scripts/python -m uvicorn app.main:app --port 8000
+```
 
 ---
 

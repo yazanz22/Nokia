@@ -40,11 +40,14 @@ class Settings(BaseSettings):
 
     # ── AI agent layer ──────────────────────────────────────────────────────
     agent_mode: str = "rule"  # "rule" | "llm"
-    llm_model: str = "groq:llama-3.3-70b-versatile"
+    # Verified on the Groq free tier. llama-3.3-70b is NOT available on our key,
+    # so it must not be the default — a deploy without .env would 404 on every call.
+    llm_model: str = "groq:openai/gpt-oss-120b"
     groq_api_key: str = ""
     gemini_api_key: str = ""
 
     # ── App ─────────────────────────────────────────────────────────────────
+    # 0.0.0.0 in a container; hosts inject the port via $PORT.
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
     sim_tick_seconds: float = 2.0
