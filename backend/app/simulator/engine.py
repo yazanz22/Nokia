@@ -24,6 +24,10 @@ SCENARIOS = {
     "blindspot": "NETWORK_OUTAGE",
     "hardware": "DEVICE_FAILURE",
     "sensor": "SENSOR_FAILURE",
+    # Not a dataset label: the machine crossed onto a foreign operator near the site
+    # boundary, so it is healthy and attached but its telemetry no longer reaches us.
+    # Synthesised by the NaC mock — see nac/mock.py.
+    "roaming": "ROAMING_OUT",
 }
 
 

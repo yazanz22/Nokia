@@ -41,6 +41,24 @@ class MockNaCClient:
 
     async def get_reachability(self, asset_id: str) -> Reachability:
         await asyncio.sleep(self._latency)
+        from ..simulator.engine import simulator  # local import avoids a cycle
+
+        # Border roaming is not in dataset1.csv — it has no roaming column — so the
+        # scenario synthesises it. The device stays attached and healthy; it is simply
+        # on a foreign operator, which is precisely the state no on-board sensor and
+        # no reachability check can report.
+        if simulator.pending_label(asset_id) == "ROAMING_OUT":
+            return Reachability(
+                asset_id=asset_id,
+                status="CONNECTED_DATA",
+                signal_strength_dbm=-71.0,
+                neighbor_fail_count=0,
+                roaming=True,
+                country=self._rng.choice(["EG", "JO"]),
+                as_of=_now(),
+                source="mock",
+            )
+
         row = self._row_for(asset_id)
         status = "CONNECTED_DATA" if row["reachable"] else "NOT_CONNECTED"
         return Reachability(
@@ -48,6 +66,8 @@ class MockNaCClient:
             status=status,
             signal_strength_dbm=row["signal_strength_dbm"],
             neighbor_fail_count=row["neighbor_fail_count"],
+            roaming=False,
+            country="SA",
             as_of=_now(),
             source="mock",
         )

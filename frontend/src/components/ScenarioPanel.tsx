@@ -62,6 +62,11 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
         </button>
       </div>
 
+      <button className="btn wide" disabled={busy || !target} onClick={() => fire("roaming")}>
+        Crossed the border (roaming)
+        <span className="target">{target || "—"}</span>
+      </button>
+
       <button className="btn ghost wide" disabled={busy} onClick={reset}>
         Reset fleet
       </button>

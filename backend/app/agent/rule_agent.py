@@ -18,7 +18,7 @@ import logging
 from ..models import utcnow
 from ..store import store
 from .tools import (
-    assess_coverage_gap,
+    assess_silence,
     check_device_status,
     create_work_order,
     get_device_location,
@@ -55,10 +55,37 @@ async def run_rule_investigation(incident_id: str) -> None:
         ),
     )
 
-    is_gap, why = assess_coverage_gap(reach)
-    await t.step(f"Interpreting the network signal. {why}")
+    verdict = assess_silence(reach)
+    await t.step(f"Interpreting the network signal. {verdict.explanation}")
 
-    if is_gap:
+    if verdict.category == "roaming_out":
+        # Only the roaming API surfaces this. The machine is healthy and attached —
+        # to somebody else's network — so the fix is a connectivity ticket, and
+        # sending a mechanic would be as wasted a trip as chasing a coverage gap.
+        recheck_at = schedule_recheck(asset_id, minutes=30)
+        await t.step(
+            "Raising a connectivity ticket, not a field job. Nobody is dispatched.",
+            tool="ops.notify_operator",
+            args={"asset_id": asset_id, "queue": "connectivity", "at": recheck_at.isoformat()},
+            observation=f"roaming on {reach.country}; APN unreachable from that network",
+        )
+        store.set_asset_state(asset_id, "blindspot")
+        store.record_blindspot_avoided()
+        store.close_incident(
+            inc,
+            status="roaming_blocked",
+            resolution=(
+                f"Device roamed onto a {reach.country} network at the site boundary and its "
+                f"telemetry APN no longer reaches us. Machine is healthy and attached. "
+                f"Connectivity ticket raised, re-check at {recheck_at:%H:%M UTC}. "
+                "No technician dispatched — false dispatch avoided."
+            ),
+        )
+        store.publish_kpis()
+        log.info("%s resolved as roaming_blocked", incident_id)
+        return
+
+    if verdict.category == "coverage_gap":
         recheck_at = schedule_recheck(asset_id, minutes=15)
         await t.step(
             "Logged a cellular blind spot. Scheduling an automated re-check and notifying the "

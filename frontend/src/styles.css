@@ -731,6 +731,7 @@ button:focus-visible {
 }
 
 .incident.network_blindspot,
+.incident.roaming_blocked,
 .incident.no_fault {
   border-left-color: var(--info);
 }
@@ -787,6 +788,7 @@ button:focus-visible {
   background: #241906;
 }
 .badge.network_blindspot,
+.badge.roaming_blocked,
 .badge.no_fault {
   color: var(--info);
   border-color: #24506e;

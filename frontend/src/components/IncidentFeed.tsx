@@ -5,6 +5,7 @@ const LABEL: Record<string, string> = {
   investigating: "investigating",
   network_blindspot: "blind spot · no dispatch",
   no_fault: "no fault · no dispatch",
+  roaming_blocked: "roaming · no dispatch",
   hardware_confirmed: "hardware · dispatched",
   closed: "closed",
 };

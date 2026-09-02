@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from ..models import FaultPrediction, TelemetrySample, WorkOrder, utcnow
 from ..nac import DeviceLocation, Reachability, get_network_client
@@ -19,6 +20,11 @@ from ..store import store
 # failures it points to a genuine coverage gap rather than a dead machine.
 WEAK_SIGNAL_DBM = -105.0
 
+# The fleet's home network. NEOM sits at the head of the Gulf of Aqaba, within a few
+# kilometres of Egyptian and Jordanian networks, so border roaming is a real event
+# on this site rather than a hypothetical.
+HOME_COUNTRY = "SA"
+
 
 async def check_device_status(asset_id: str) -> Reachability:
     return await get_network_client().get_reachability(asset_id)
@@ -28,28 +34,76 @@ async def get_device_location(asset_id: str) -> DeviceLocation:
     return await get_network_client().get_location(asset_id)
 
 
-def assess_coverage_gap(reach: Reachability) -> tuple[bool, str]:
-    """Disambiguate NOT_CONNECTED: coverage hole vs. hardware failure.
+class SilenceVerdict(NamedTuple):
+    """Why an asset went quiet, and whether that justifies sending anyone."""
 
-    Returns ``(is_coverage_gap, explanation)``.
+    dispatch: bool          # should we go down the fault / dispatch path at all?
+    category: str           # coverage_gap | roaming_out | hardware | inconclusive
+    explanation: str
+
+
+def assess_silence(reach: Reachability) -> SilenceVerdict:
+    """Work out why a machine stopped reporting.
+
+    Silence has more than one cause, and they need opposite responses. Reachability
+    alone cannot separate them — that is the whole reason this calls more than one
+    CAMARA API.
     """
-    if reach.connected:
-        return False, "SIM is attached to the network — connectivity is not the problem."
     sig = reach.signal_strength_dbm
     nbr = reach.neighbor_fail_count or 0
+
+    # Attached to a foreign network. The device is alive and on a network, it just
+    # is not on OURS — so our telemetry APN never reaches the fleet backend. This is
+    # invisible to reachability and to any on-board sensor; only the roaming API
+    # reports it. It is a connectivity ticket, never a mechanic.
+    if reach.roaming and reach.country and reach.country != HOME_COUNTRY:
+        return SilenceVerdict(
+            dispatch=False,
+            category="roaming_out",
+            explanation=(
+                f"The device is reachable but roaming on a {reach.country} network. It has "
+                "crossed onto a foreign operator near the site boundary, so its telemetry APN "
+                "no longer reaches us. The machine is fine — this is a connectivity ticket, "
+                "not a breakdown."
+            ),
+        )
+
+    if reach.connected:
+        # Attached to our own network yet not reporting. Connectivity is ruled out, so
+        # this still needs the fault model — it is how a failed sensor on a healthy
+        # machine presents, and how a transient dropout presents too.
+        return SilenceVerdict(
+            True, "inconclusive",
+            "SIM is attached to our network — connectivity is not the problem, so the "
+            "silence is something on the machine.",
+        )
+
     if sig is not None and sig <= WEAK_SIGNAL_DBM and nbr >= 1:
-        return True, (
-            f"Last serving-cell signal {sig:.0f} dBm with {nbr} neighbour-cell failures — "
-            "the network dropped the device, not a fault on the machine."
+        return SilenceVerdict(
+            dispatch=False,
+            category="coverage_gap",
+            explanation=(
+                f"Last serving-cell signal {sig:.0f} dBm with {nbr} neighbour-cell failures — "
+                "the network dropped the device, not a fault on the machine."
+            ),
         )
+
     if sig is not None and sig > WEAK_SIGNAL_DBM and nbr == 0:
-        return False, (
-            f"Device is unreachable but its last serving-cell signal was strong ({sig:.0f} dBm) "
-            "with no neighbour-cell failures — the network is healthy here, so the silence is the "
-            "equipment itself."
+        return SilenceVerdict(
+            dispatch=True,
+            category="hardware",
+            explanation=(
+                f"Device is unreachable but its last serving-cell signal was strong ({sig:.0f} dBm) "
+                "with no neighbour-cell failures — the network is healthy here, so the silence is "
+                "the equipment itself."
+            ),
         )
+
     # Ambiguous — lean toward investigating hardware (a wasted check beats a missed breakdown).
-    return False, "Network signal inconclusive; treating as a possible hardware fault pending ML review."
+    return SilenceVerdict(
+        True, "inconclusive",
+        "Network signal inconclusive; treating as a possible hardware fault pending ML review.",
+    )
 
 
 def predict_fault(asset_id: str, reach: Reachability | None = None) -> FaultPrediction:

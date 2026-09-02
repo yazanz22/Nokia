@@ -22,7 +22,7 @@ from pydantic_ai import Agent, RunContext
 from ..config import get_settings
 from ..store import store
 from .tools import (
-    assess_coverage_gap,
+    assess_silence,
     check_device_status,
     create_work_order,
     get_device_location,
@@ -47,11 +47,14 @@ Policy:
 2. Use `assess_coverage` to weigh serving-cell signal and neighbour-cell failures:
    - weak signal AND neighbour failures  -> coverage gap.
    - unreachable BUT strong signal, no neighbour failures -> the network is fine; the machine died.
+   - reachable BUT roaming on a foreign network -> the machine is fine, its telemetry just
+     cannot reach us from that operator. This is a connectivity ticket, never a mechanic.
 3. Coverage gap -> call `resolve_as_blindspot`. Do not predict faults, do not dispatch.
-4. Otherwise -> call `predict_fault`, then `get_location`, then `dispatch_technician`.
+4. Foreign roaming -> call `resolve_as_roaming`. Do not predict faults, do not dispatch.
+5. Otherwise -> call `predict_fault`, then `get_location`, then `dispatch_technician`.
 
-You MUST finish by actually invoking exactly one of `resolve_as_blindspot` or
-`dispatch_technician` as a real tool call. Writing out the tool name and its arguments as
+You MUST finish by actually invoking exactly one of `resolve_as_blindspot`,
+`resolve_as_roaming` or `dispatch_technician` as a real tool call. Writing out the tool name and its arguments as
 text — JSON or prose — does nothing: the incident stays open and no one is dispatched.
 Nothing happens until the tool is invoked.
 
@@ -66,6 +69,7 @@ class Deps:
     tracer: Tracer
     terminal: str | None = None
     last_fault: object = None
+    verdict: object = None
     _reach: object = None
 
 
@@ -95,12 +99,42 @@ def _build_agent():
 
     @agent.tool
     async def assess_coverage(ctx: RunContext[Deps]) -> str:
-        """Interpret the device status: is this a coverage gap or a hardware fault?"""
+        """Interpret the network signals: coverage gap, foreign roaming, or a fault?"""
         if ctx.deps._reach is None:
             return "call check_device_status_tool first"
-        is_gap, why = assess_coverage_gap(ctx.deps._reach)
-        await ctx.deps.tracer.step(f"Interpreting the network signal. {why}")
-        return f"coverage_gap={is_gap}: {why}"
+        v = assess_silence(ctx.deps._reach)
+        ctx.deps.verdict = v
+        await ctx.deps.tracer.step(f"Interpreting the network signal. {v.explanation}")
+        return f"category={v.category} investigate_fault={v.dispatch}: {v.explanation}"
+
+    @agent.tool
+    async def resolve_as_roaming(ctx: RunContext[Deps]) -> str:
+        """TERMINAL: device is on a foreign network — raise a connectivity ticket, no dispatch."""
+        d = ctx.deps
+        reach = d._reach
+        country = getattr(reach, "country", None) or "a foreign"
+        recheck_at = schedule_recheck(d.asset_id, minutes=30)
+        await d.tracer.step(
+            "Raising a connectivity ticket, not a field job. Nobody is dispatched.",
+            tool="ops.notify_operator",
+            args={"asset_id": d.asset_id, "queue": "connectivity"},
+            observation=f"roaming on {country}; APN unreachable from that network",
+        )
+        inc = store.incidents[d.incident_id]
+        store.set_asset_state(d.asset_id, "blindspot")
+        store.record_blindspot_avoided()
+        store.close_incident(
+            inc,
+            status="roaming_blocked",
+            resolution=(
+                f"Device roamed onto a {country} network at the site boundary; its telemetry "
+                f"APN no longer reaches us. Machine healthy and attached. Connectivity ticket "
+                f"raised, re-check at {recheck_at:%H:%M UTC}. No technician dispatched."
+            ),
+        )
+        store.publish_kpis()
+        d.terminal = "roaming"
+        return "resolved as roaming"
 
     @agent.tool
     async def predict_fault_tool(ctx: RunContext[Deps]) -> str:
@@ -157,8 +191,12 @@ def _build_agent():
         d = ctx.deps
         fault = d.last_fault or predict_fault(d.asset_id, d._reach)  # type: ignore[arg-type]
 
-        # Guard, not a suggestion: a healthy classification can never become a
-        # dispatch, whatever the model decided to call. Terminal tools own this.
+        # Guards, not suggestions: terminal tools own these, so no decision the model
+        # makes can turn a healthy machine or a roaming one into a field dispatch.
+        v = getattr(d, "verdict", None)
+        if v is not None and v.category == "roaming_out":
+            return await resolve_as_roaming(ctx)
+
         if getattr(fault, "mode", None) == "NORMAL":
             recheck_at = schedule_recheck(d.asset_id, minutes=15)
             await d.tracer.step(

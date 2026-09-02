@@ -59,6 +59,20 @@ async def test_healthy_reading_never_dispatches():
 
 
 @pytest.mark.asyncio
+async def test_foreign_roaming_never_dispatches():
+    """A machine on a foreign operator is healthy, not broken.
+
+    Nothing on the device can report this — it is attached and fine, just not to our
+    network, so its telemetry never arrives. Only the roaming API surfaces it, and the
+    correct response is a connectivity ticket rather than a mechanic.
+    """
+    asset_id, inc = await _investigate("roaming")
+    assert inc.status == "roaming_blocked"
+    assert [w for w in store.work_orders.values() if w.incident_id == inc.id] == []
+    assert store.false_dispatches_avoided == 1
+
+
+@pytest.mark.asyncio
 async def test_reset_mid_investigation_leaves_no_zombie():
     """Resetting the fleet must abandon anything in flight.
 

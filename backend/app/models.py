@@ -56,6 +56,7 @@ IncidentStatus = Literal[
     "investigating",
     "network_blindspot",     # coverage gap — no dispatch
     "no_fault",              # network fine, but the machine reads healthy — no dispatch
+    "roaming_blocked",       # on a foreign network — connectivity ticket, no dispatch
     "hardware_confirmed",    # real fault — technician dispatched
     "closed",
 ]
