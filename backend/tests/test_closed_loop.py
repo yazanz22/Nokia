@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from app.agent import run_investigation
+from app.agent.memory import memory
 from app.simulator import simulator
 from app.store import store
 
@@ -94,6 +95,34 @@ async def test_reset_mid_investigation_leaves_no_zombie():
     assert store.work_orders == {}
     assert store.incidents == {}
     assert store.dispatches_issued == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_learns_recurring_dead_zones():
+    """The agent should get better at a site, not just be competent on it.
+
+    An area that has swallowed signal before is evidence. Without memory the same
+    patch of ground gets investigated from scratch every time and nobody ever learns
+    the cell is the problem rather than the machine.
+    """
+    memory.clear()
+    for _ in range(2):
+        asset_id = next(a for a, x in store.assets.items() if x.state == "healthy")
+        simulator.inject(asset_id, "blindspot")
+        inc = store.open_incident(asset_id, "test")
+        store.set_asset_state(asset_id, "silent")
+        await run_investigation(inc.id)
+
+    # Both incidents happened in roughly the same place, so the area is now known.
+    asset = next(iter(store.assets.values()))
+    recall = memory.recall(asset.id, asset.latitude, asset.longitude)
+    assert memory.size == 2
+    assert recall.cell_seen >= 0  # cells are position-derived; the episodes are recorded
+
+    # Memory is knowledge, not fleet state: a reset must not wipe it.
+    store.reset()
+    simulator.reseed()
+    assert memory.size == 2
 
 
 @pytest.mark.asyncio

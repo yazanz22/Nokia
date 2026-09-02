@@ -47,10 +47,26 @@ report:
 |---|---|---|
 | Unreachable · weak cell (≤ −105 dBm) · neighbour cells failing | coverage gap | re-check, **no dispatch** |
 | Unreachable · **strong** cell · no neighbour failures | network is fine, so the machine died | classify fault → dispatch |
+| Reachable · **roaming on a foreign operator** | crossed the border; telemetry can't reach us | connectivity ticket, **no dispatch** |
 | Reachable · telemetry nominal | transient dropout | re-check, **no dispatch** |
 | Reachable · telemetry age drifting | sensor fault | cheap sensor-kit dispatch |
 
-The second row is the one a naive reachability check gets exactly backwards.
+The second row is the one a naive reachability check gets exactly backwards. The third
+is invisible without the roaming API — the machine is healthy *and attached*, just not
+to our network, so nothing on the device can tell you why its data stopped arriving.
+NEOM sits within a few kilometres of Egyptian and Jordanian networks, so this is an
+ordinary event on that site.
+
+One dispatch among five outcomes. That ratio is the product.
+
+### It learns the site
+
+The agent records how each incident resolved against the machine and the patch of
+ground it happened on. An area that has swallowed signal before is evidence: the third
+time a machine goes quiet in the same cell, the agent opens with *"this is a known dead
+zone, not a run of bad luck"* and says so in its verdict, rather than investigating
+from scratch and letting nobody notice the pattern. Memory survives a fleet reset —
+the fleet is state, what the agent learned about the terrain is knowledge.
 
 Both datasets are synthetic and their generators are in the repo
 (`data/dataset_builder.py`, `data/history_builder.py`). Numbers computed from them

@@ -29,6 +29,7 @@ from .tools import (
     predict_fault,
     schedule_recheck,
 )
+from .memory import memory
 from .trace import Tracer
 
 log = logging.getLogger("agent.llm")
@@ -43,7 +44,9 @@ the right part). A wasted desert dispatch costs fuel, labour and crew safety mar
 breakdown costs far more.
 
 Policy:
-1. Call `check_device_status` first. `NOT_CONNECTED` is ambiguous on its own.
+0. Call `recall_history` first — if this patch of the site is a known dead zone, a
+   coverage verdict needs less corroboration than it would on fresh ground.
+1. Then call `check_device_status`. `NOT_CONNECTED` is ambiguous on its own.
 2. Use `assess_coverage` to weigh serving-cell signal and neighbour-cell failures:
    - weak signal AND neighbour failures  -> coverage gap.
    - unreachable BUT strong signal, no neighbour failures -> the network is fine; the machine died.
@@ -73,9 +76,40 @@ class Deps:
     _reach: object = None
 
 
+def _remember(asset_id: str, category: str) -> None:
+    asset = store.assets.get(asset_id)
+    if asset is not None:
+        memory.record(asset_id, asset.latitude, asset.longitude, category)
+
+
 def _build_agent():
     settings = get_settings()
     agent = Agent(settings.llm_model, deps_type=Deps, system_prompt=SYSTEM_PROMPT, retries=2)
+
+    @agent.tool
+    async def recall_history(ctx: RunContext[Deps]) -> str:
+        """What has happened to this machine, and in this part of the site, before?
+        Call this first — a known dead zone changes how much evidence you need."""
+        d = ctx.deps
+        asset = store.assets.get(d.asset_id)
+        if asset is None:
+            return "no history"
+        past = memory.recall(d.asset_id, asset.latitude, asset.longitude)
+        if past.has_history:
+            await d.tracer.step(
+                f"Checking what we already know. {past.summary}",
+                tool="memory.recall",
+                args={"asset_id": d.asset_id},
+                observation=(
+                    f"asset incidents={past.asset_seen}, incidents in this area={past.cell_seen}, "
+                    f"known dead zone={past.known_dead_zone}"
+                ),
+            )
+        return (
+            f"prior_incidents_this_asset={past.asset_seen} "
+            f"prior_incidents_this_area={past.cell_seen} "
+            f"known_dead_zone={past.known_dead_zone}. {past.summary}"
+        )
 
     @agent.tool
     async def check_device_status_tool(ctx: RunContext[Deps]) -> str:
@@ -132,6 +166,7 @@ def _build_agent():
                 f"raised, re-check at {recheck_at:%H:%M UTC}. No technician dispatched."
             ),
         )
+        _remember(d.asset_id, "roaming_blocked")
         store.publish_kpis()
         d.terminal = "roaming"
         return "resolved as roaming"
@@ -181,6 +216,7 @@ def _build_agent():
             status="network_blindspot",
             resolution=f"Cellular blind spot (agent): {reason} Re-check at {recheck_at:%H:%M UTC}.",
         )
+        _remember(d.asset_id, "network_blindspot")
         store.publish_kpis()
         d.terminal = "blindspot"
         return "resolved"
@@ -217,6 +253,7 @@ def _build_agent():
                     f"confidence — transient dropout. Re-check at {recheck_at:%H:%M UTC}."
                 ),
             )
+            _remember(d.asset_id, "no_fault")
             store.publish_kpis()
             d.terminal = "no_fault"
             return "no fault found — dispatch withheld"
@@ -242,6 +279,7 @@ def _build_agent():
                 f"{wo.id} -> {wo.technician_name} (ETA {wo.eta_minutes} min) with {wo.part}."
             ),
         )
+        _remember(d.asset_id, "hardware_confirmed")
         store.publish_kpis()
         d.terminal = "dispatch"
         return f"dispatched {wo.id}"

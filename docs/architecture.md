@@ -72,11 +72,20 @@ hole both look like. The agent resolves it from signals the device cannot provid
 |---|---|---|
 | Unreachable, weak serving cell (≤ −105 dBm), neighbour cells also failing | coverage gap | re-check scheduled, operator notified, **no dispatch** |
 | Unreachable, **strong** serving cell, no neighbour failures | the network is fine here, so the machine died | ML classifies the fault → dispatch |
+| Reachable, **roaming on a foreign network** | crossed the site boundary onto another operator | connectivity ticket, **no dispatch** |
 | Reachable, telemetry nominal | transient dropout | re-check, **no dispatch** |
 | Reachable, telemetry age drifting | sensor fault | cheap sensor-kit dispatch |
 
-The middle row is the interesting one: *unreachable but with a healthy radio link* is
-the case a naive "is it reachable?" check gets exactly backwards.
+Two rows carry the weight. *Unreachable but with a healthy radio link* is the case a
+naive reachability check gets exactly backwards. *Reachable but roaming* is invisible
+without a second API — the device is fine and attached, just not to us.
+
+The agent also remembers. Each resolution is recorded against the machine and the map
+cell it happened in, so a patch of ground that has swallowed signal before is treated
+as evidence rather than coincidence. Memory is structured rather than semantic — the
+question is "same asset or same cell, what happened last time?", which has an exact
+answer — and it survives a fleet reset, because the fleet is state and the terrain is
+knowledge.
 
 ## Where ML earns its place
 

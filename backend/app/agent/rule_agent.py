@@ -25,6 +25,7 @@ from .tools import (
     predict_fault,
     schedule_recheck,
 )
+from .memory import memory
 from .trace import Tracer
 
 log = logging.getLogger("agent.rule")
@@ -43,6 +44,19 @@ async def run_rule_investigation(incident_id: str) -> None:
         f"{asset.label} ({asset_id}) stopped transmitting. Before rolling a truck I need to know "
         f"whether the network dropped it or the machine did. Querying CAMARA Device Status.",
     )
+
+    # What have we learned about this machine and this patch of ground before?
+    past = memory.recall(asset_id, asset.latitude, asset.longitude)
+    if past.has_history:
+        await t.step(
+            f"Checking what we already know. {past.summary}",
+            tool="memory.recall",
+            args={"asset_id": asset_id},
+            observation=(
+                f"asset incidents={past.asset_seen}, incidents in this area={past.cell_seen}, "
+                f"known dead zone={past.known_dead_zone}"
+            ),
+        )
 
     reach = await check_device_status(asset_id)
     await t.step(
@@ -81,6 +95,7 @@ async def run_rule_investigation(incident_id: str) -> None:
                 "No technician dispatched — false dispatch avoided."
             ),
         )
+        memory.record(asset_id, asset.latitude, asset.longitude, "roaming_blocked")
         store.publish_kpis()
         log.info("%s resolved as roaming_blocked", incident_id)
         return
@@ -105,6 +120,7 @@ async def run_rule_investigation(incident_id: str) -> None:
                 "No technician dispatched — false dispatch avoided."
             ),
         )
+        memory.record(asset_id, asset.latitude, asset.longitude, "network_blindspot")
         store.publish_kpis()
         log.info("%s resolved as blindspot", incident_id)
         return
@@ -149,6 +165,7 @@ async def run_rule_investigation(incident_id: str) -> None:
                 f"Re-check at {recheck_at:%H:%M UTC}. No technician dispatched."
             ),
         )
+        memory.record(asset_id, asset.latitude, asset.longitude, "no_fault")
         store.publish_kpis()
         log.info("%s resolved as no_fault", incident_id)
         return
@@ -185,5 +202,6 @@ async def run_rule_investigation(incident_id: str) -> None:
             f"Diagnosed and dispatched in {(utcnow() - inc.opened_at).total_seconds():.0f}s."
         ),
     )
+    memory.record(asset_id, asset.latitude, asset.longitude, "hardware_confirmed")
     store.publish_kpis()
     log.info("%s resolved as hardware_confirmed -> %s", incident_id, wo.id)

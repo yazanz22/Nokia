@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..agent.memory import memory
 from ..anomaly import detector
 from ..events import bus
 from ..models import WsEvent
@@ -45,9 +46,22 @@ def inject_scenario(req: InjectRequest) -> dict:
 
 
 @router.post("/scenarios/reset")
-async def reset_demo() -> dict:
+async def reset_demo(clear_memory: bool = False) -> dict:
+    """Reset the fleet.
+
+    Agent memory is kept by default: the fleet is demo state, but what the agent has
+    learned about which parts of the site swallow signal is knowledge, and throwing it
+    away on every reset would make the system permanently amnesiac. Pass
+    ``clear_memory=true`` for a genuinely blank slate — e.g. before recording a demo.
+    """
     store.reset()
     simulator.reseed()
     detector.reset()
+    if clear_memory:
+        memory.clear()
     bus.publish(WsEvent(type="snapshot", payload=store.snapshot()))
-    return {"ok": True, "fleet_size": len(store.assets)}
+    return {
+        "ok": True,
+        "fleet_size": len(store.assets),
+        "memory_episodes": memory.size,
+    }

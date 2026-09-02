@@ -75,6 +75,7 @@ async def debug_nac(asset_id: str) -> dict:
 @router.get("/debug/health")
 def debug_health() -> dict:
     import app.agent as agent_mod
+    from ..agent.memory import memory
 
     s = get_settings()
     return {
@@ -87,6 +88,7 @@ def debug_health() -> dict:
         "last_agent_used": agent_mod.last_agent_used,
         "last_agent_error": agent_mod.last_agent_error,
         "ml_backend": fault_model.backend,
+        "memory_episodes": memory.size,
         "fleet_size": len(store.assets),
         "open_incidents": sum(1 for i in store.incidents.values() if i.closed_at is None),
     }
