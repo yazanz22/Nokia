@@ -229,8 +229,17 @@ def _build_agent():
 
         # Guards, not suggestions: terminal tools own these, so no decision the model
         # makes can turn a healthy machine or a roaming one into a field dispatch.
-        v = getattr(d, "verdict", None)
-        if v is not None and v.category == "roaming_out":
+        #
+        # These must not depend on the model having called the assessment tool first.
+        # It is free to skip straight from device status to dispatch — and when it did,
+        # an earlier version of this guard silently did not fire and sent a technician
+        # to a machine that had merely crossed a border. Recompute here instead.
+        reach = d._reach
+        if reach is None:
+            reach = await check_device_status(d.asset_id)
+            d._reach = reach
+        v = d.verdict or assess_silence(reach)  # type: ignore[arg-type]
+        if v.category == "roaming_out":
             return await resolve_as_roaming(ctx)
 
         if getattr(fault, "mode", None) == "NORMAL":

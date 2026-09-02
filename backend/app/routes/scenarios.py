@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..agent.memory import memory
 from ..anomaly import detector
 from ..events import bus
 from ..models import WsEvent
+from ..ratelimit import inject_limiter
 from ..simulator import simulator
 from ..simulator.engine import SCENARIOS
 from ..store import store
@@ -26,7 +27,8 @@ def list_scenarios() -> dict:
 
 
 @router.post("/scenarios/inject")
-def inject_scenario(req: InjectRequest) -> dict:
+def inject_scenario(req: InjectRequest, request: Request) -> dict:
+    inject_limiter.check(request)
     asset = store.assets.get(req.asset_id)
     if asset is None:
         raise HTTPException(404, f"unknown asset {req.asset_id}")

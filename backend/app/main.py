@@ -51,12 +51,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FILO Asset Sentinel", version="0.1.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS exists only for local development, where Vite serves the dashboard on :5173
+# and proxies to this API. A deployed build is served from this same origin, so no
+# cross-origin access is needed and a wildcard would just let any site drive the demo.
+_settings = get_settings()
+if not (REPO_ROOT / "frontend" / "dist").is_dir():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            f"http://localhost:{5173}",
+            f"http://127.0.0.1:{5173}",
+        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 app.include_router(api_router)
 
 

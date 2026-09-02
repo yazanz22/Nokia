@@ -31,6 +31,10 @@ CELL = 0.02
 # it is a property of the terrain worth telling the network team about.
 KNOWN_DEAD_ZONE = 2
 
+# Recent history is what informs a decision; a hundred episodes per key is far more
+# than the counts above ever need, and bounds a long-running deployment.
+MAX_PER_KEY = 100
+
 
 def _cell(lat: float, lon: float) -> tuple[int, int]:
     return (int(lat / CELL), int(lon / CELL))
@@ -67,8 +71,10 @@ class AgentMemory:
 
     def record(self, asset_id: str, lat: float, lon: float, category: str) -> None:
         ep = Episode(asset_id=asset_id, cell=_cell(lat, lon), category=category)
-        self._by_asset[asset_id].append(ep)
-        self._by_cell[ep.cell].append(ep)
+        for bucket in (self._by_asset[asset_id], self._by_cell[ep.cell]):
+            bucket.append(ep)
+            if len(bucket) > MAX_PER_KEY:
+                del bucket[:-MAX_PER_KEY]
 
     def recall(self, asset_id: str, lat: float, lon: float) -> Recollection:
         cell = _cell(lat, lon)

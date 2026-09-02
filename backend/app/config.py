@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Verified on the Groq free tier. llama-3.3-70b is NOT available on our key,
     # so it must not be the default — a deploy without .env would 404 on every call.
     llm_model: str = "groq:openai/gpt-oss-120b"
+    # Groq's free tier allows 8,000 tokens/minute and one investigation costs on the
+    # order of a thousand. Running several at once self-inflicts a 429 and silently
+    # drops the whole demo to the rule agent, so investigations queue instead.
+    agent_max_concurrent: int = 1
     groq_api_key: str = ""
     gemini_api_key: str = ""
 

@@ -26,6 +26,13 @@ from .models import (
 from .seed import build_demo_fleet, build_technicians
 
 
+# A public deployment runs for days with nobody pressing reset, and every incident
+# carries a trace. Keeping the most recent slice bounds memory without affecting
+# anything a viewer can see — the dashboard only ever shows recent activity.
+MAX_INCIDENTS = 200
+MAX_WORK_ORDERS = 200
+
+
 class Store:
     def __init__(self) -> None:
         # Bumped on every reset. An investigation started before a reset must not be
@@ -81,6 +88,7 @@ class Store:
         inc = Incident(id=f"INC-{next(self._incident_seq):04d}", asset_id=asset_id, summary=summary)
         self.incidents[inc.id] = inc
         self.trace[inc.id] = []
+        self._prune()
         bus.publish(WsEvent(type="incident_update", payload=inc.model_dump(mode="json")))
         return inc
 
@@ -95,6 +103,20 @@ class Store:
         if inc.opened_at and inc.closed_at:
             self._triage_durations.append((inc.closed_at - inc.opened_at).total_seconds())
         self.update_incident(inc)
+
+    def _prune(self) -> None:
+        """Drop the oldest incidents, their traces and their work orders."""
+        if len(self.incidents) > MAX_INCIDENTS:
+            keep = sorted(self.incidents.values(), key=lambda i: i.opened_at)[-MAX_INCIDENTS:]
+            keep_ids = {i.id for i in keep}
+            self.incidents = {i.id: i for i in keep}
+            self.trace = {k: v for k, v in self.trace.items() if k in keep_ids}
+        if len(self.work_orders) > MAX_WORK_ORDERS:
+            kept = sorted(self.work_orders.values(), key=lambda w: w.created_at)[-MAX_WORK_ORDERS:]
+            self.work_orders = {w.id: w for w in kept}
+        # Only the mean matters, so a rolling window is enough.
+        if len(self._triage_durations) > 500:
+            del self._triage_durations[:-500]
 
     def add_trace_step(self, step: TraceStep) -> None:
         self.trace.setdefault(step.incident_id, []).append(step)

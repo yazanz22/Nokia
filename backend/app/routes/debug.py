@@ -1,23 +1,25 @@
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ..config import get_settings
 from ..ml.client import fault_model
 from ..nac import get_live_client, get_network_client
 from ..nac.factory import FallbackNaCClient
+from ..ratelimit import live_check_limiter
 from ..store import store
 
 router = APIRouter(tags=["debug"])
 
 
 @router.post("/nac/live-check")
-async def nac_live_check(asset_id: str | None = None) -> dict:
+async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
     """Run a genuine CAMARA call against the Nokia sandbox, right now.
 
     This is the "prove it's real" button. It always hits the live API regardless of
     NAC_MODE, and returns the round-trip time so the latency is visible too.
     """
+    live_check_limiter.check(request)
     settings = get_settings()
     client = get_live_client()
     if client is None:
