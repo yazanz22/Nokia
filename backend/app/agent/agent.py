@@ -1,6 +1,6 @@
-"""Pydantic AI agent (Resource & Tooling Guide §2) driving a Groq-hosted Llama 3.3
-70B model (§3). The CAMARA APIs and the ML model are registered as tools the model
-chooses to call (§11) — it is not a fixed script.
+"""Pydantic AI agent (Resource & Tooling Guide §2) driving an open-weights model on
+Groq (§3) — see LLM_MODEL. The CAMARA APIs and the ML models are registered as tools
+the model chooses to call (§11); this is not a fixed script.
 
 Same actions, same guardrails as ``rule_agent``: the model must finish by calling
 exactly one terminal tool (``resolve_as_blindspot`` or ``dispatch_technician``).
@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
 
 from ..config import get_settings
-from ..models import utcnow
 from ..store import store
 from .tools import (
     assess_coverage_gap,

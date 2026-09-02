@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -193,7 +192,6 @@ def train_prognostic() -> dict:
 
     # ── the number that actually matters: warning time ──────────────────────
     temp_thresh = _temperature_baseline(df, assets)[0]
-    temp_col = list(df.columns).index("engine_temp_c")
     # engine_temp "last" is the 16th prognostic feature (4th channel, 1st stat)
     temp_last_idx = PROGNOSTIC_FEATURES.index("engine_temp_c_last")
 

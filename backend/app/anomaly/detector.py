@@ -74,8 +74,6 @@ class AnomalyDetector:
         )
         log.info("opened %s for %s", inc.id, asset_id)
 
-        from ..agent import run_investigation  # local import avoids a cycle
-
         task = asyncio.create_task(self._investigate(asset_id, inc.id), name=f"agent-{inc.id}")
         self._agent_tasks.add(task)
         task.add_done_callback(self._agent_tasks.discard)
