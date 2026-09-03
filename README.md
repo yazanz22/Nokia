@@ -24,18 +24,23 @@ Every step of the agent's reasoning is streamed to a live operator dashboard.
 
 ## Is this a real problem?
 
-Yes, and the industry already has a name for it. A wasted field visit is a **truck roll**
-— $150–$500 direct, closer to $1,000 all-in — and **"no fault found"** is the standard
-term for the trip where the technician arrives and there is nothing to repair. Many
-operators run a first-visit completion rate of only 75–85%.
+Yes, and the industry already has names and budgets for it. A wasted field visit is a
+**truck roll** — **$250–$600, up to $1,000** — and **"no fault found"** is the standard
+term for the trip where the technician arrives and there is nothing to repair. Vendors put
+the NFF rate at **17–20% of all dispatches**; on an operator running 1,000 dispatches a
+day that is **$10.7M a year** spent achieving nothing.
 
-Meanwhile the machines really are on mobile networks (**73% of construction telematics is
-cellular**) and really do drop off them: coverage on active sites is *"often
-inconsistent"* as terrain changes and zones open and close. NEOM is being built right now
-with STC as its network partner — the exact environment where asking the operator's
-network is possible.
+On the other side, unplanned downtime on construction equipment runs
+**$3,200–$8,700 per machine per day**, and unplanned repairs cost **3–5× more** than
+planned ones. Predictive maintenance is established practice: McKinsey puts it at
+**18–25% lower maintenance cost** and **up to 50% less unplanned downtime**.
 
-Sources and the claims we deliberately do **not** make: [docs/EVIDENCE.md](docs/EVIDENCE.md).
+And the machines really are on mobile networks — **73% of construction telematics is
+cellular** — on sites where coverage is *"often inconsistent"*. NEOM is being built right
+now with STC as its network partner, which is what makes asking the operator possible.
+
+Sources, source-quality caveats, and the claims we deliberately do **not** make:
+[docs/EVIDENCE.md](docs/EVIDENCE.md).
 
 ## Why the network call is irreplaceable
 
