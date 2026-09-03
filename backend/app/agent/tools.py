@@ -208,17 +208,18 @@ async def create_work_order(
     location: DeviceLocation,
 ) -> WorkOrder:
     part = fault.recommended_part
-    # Nearest available technician who carries the required part.
-    candidates = [
-        t
-        for t in store.technicians.values()
-        if t.available and (not part or part in t.parts_on_hand)
-    ]
-    if not candidates:  # relax the part constraint rather than fail to dispatch
-        candidates = [t for t in store.technicians.values() if t.available]
 
-    # Establish where they are *now*, before working out who is nearest.
-    crew_source = await locate_crew(candidates)
+    # Establish where the whole available crew is *now*, once. Both questions below —
+    # who is nearest with the part, and who was nearer without it — are answered from
+    # the same set of positions. Locating twice would bill the Location Retrieval API
+    # twice per dispatch and, worse, compare people measured at different moments.
+    available = [t for t in store.technicians.values() if t.available]
+    crew_source = await locate_crew(available)
+
+    # Nearest available technician who carries the required part.
+    candidates = [t for t in available if not part or part in t.parts_on_hand]
+    if not candidates:  # relax the part constraint rather than fail to dispatch
+        candidates = available
 
     # Someone closer who cannot fix it is not a better answer, but on a map it looks
     # like one. Record the skipped-but-nearer person so the reasoning is visible
@@ -226,9 +227,8 @@ async def create_work_order(
     skipped_closer: Technician | None = None
     skipped_km = 0.0
     if part:
-        await locate_crew([t for t in store.technicians.values() if t.available])
-        for other in store.technicians.values():
-            if not other.available or part in other.parts_on_hand:
+        for other in available:
+            if part in other.parts_on_hand:
                 continue
             km = _haversine_km(other.latitude, other.longitude,
                                location.latitude, location.longitude)
