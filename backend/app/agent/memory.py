@@ -17,6 +17,7 @@ agent has learned about the terrain is not.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -37,7 +38,12 @@ MAX_PER_KEY = 100
 
 
 def _cell(lat: float, lon: float) -> tuple[int, int]:
-    return (int(lat / CELL), int(lon / CELL))
+    # floor, not int(): int() truncates toward zero, so the cells either side of the
+    # equator or the prime meridian would collapse into one double-width cell, and
+    # dead_zones() — which reconstructs a cell centre as (index + 0.5) * CELL — would
+    # draw it in the wrong place. NEOM is comfortably positive on both axes, but a
+    # fleet in Cairo is one degree of longitude from proving that wrong.
+    return (math.floor(lat / CELL), math.floor(lon / CELL))
 
 
 @dataclass

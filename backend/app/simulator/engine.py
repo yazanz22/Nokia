@@ -16,6 +16,7 @@ from datetime import timedelta
 
 from ..config import get_settings
 from ..models import TelemetrySample, utcnow
+from ..ratelimit import inject_limiter, live_check_limiter
 from ..store import store
 from .profiles import build_profiles
 
@@ -143,6 +144,10 @@ class SimulatorEngine:
                     tech.longitude += self._rng.uniform(-0.0015, 0.0015)
             store.publish_technicians()
             store.advance_work_orders()
+            # The limiters keep a bucket per client IP. Nothing was calling prune(),
+            # so on a public URL the dict grew by one entry per crawler, forever.
+            inject_limiter.prune()
+            live_check_limiter.prune()
             store.publish_kpis()
             await asyncio.sleep(settings.sim_tick_seconds)
 
