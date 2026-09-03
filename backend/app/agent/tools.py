@@ -11,7 +11,7 @@ import math
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
-from ..models import FaultPrediction, TelemetrySample, WorkOrder, utcnow
+from ..models import FaultPrediction, TelemetrySample, Technician, WorkOrder, utcnow
 from ..nac import DeviceLocation, Reachability, get_network_client
 from ..ml.client import fault_model
 from ..store import store
@@ -163,7 +163,45 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def create_work_order(
+async def locate_crew(technicians: list[Technician]) -> str:
+    """Ask the network where the available crew actually are.
+
+    A technician's phone is a device on the same network as the machine, so the same
+    CAMARA Location Retrieval call answers both halves of the dispatch question: where
+    is the broken asset, and who is genuinely nearest to it. Rostered or last-known
+    positions go stale the moment someone drives to a job — dispatching on them is how
+    you send the second-nearest person.
+
+    Best effort: a technician we cannot locate keeps their last known position rather
+    than dropping out of consideration.
+    """
+    from ..config import get_settings
+
+    settings = get_settings()
+    client = get_network_client()
+
+    # In live mode an unmapped subject falls back to the shared sandbox device, which
+    # would put every technician on the same coordinates and make "nearest" meaningless.
+    # Only locate crew with a device of their own; the rest keep their last position.
+    mapped = settings.device_map()
+    live = settings.nac_mode == "live"
+
+    source = "seed"
+    for tech in technicians:
+        if live and tech.id not in mapped:
+            continue
+        try:
+            loc = await client.get_location(tech.id)
+        except Exception:  # noqa: BLE001 - an unlocatable crew member is not fatal
+            continue
+        tech.latitude = loc.latitude
+        tech.longitude = loc.longitude
+        tech.located_via = loc.source
+        source = loc.source
+    return source
+
+
+async def create_work_order(
     incident_id: str,
     asset_id: str,
     fault: FaultPrediction,
@@ -178,6 +216,9 @@ def create_work_order(
     ]
     if not candidates:  # relax the part constraint rather than fail to dispatch
         candidates = [t for t in store.technicians.values() if t.available]
+
+    # Establish where they are *now*, before working out who is nearest.
+    crew_source = await locate_crew(candidates)
 
     tech = None
     distance = 0.0
@@ -202,6 +243,7 @@ def create_work_order(
         asset_longitude=location.longitude,
         technician_id=tech.id if tech else None,
         technician_name=tech.name if tech else "",
+        technician_located_via=crew_source,
         distance_km=round(distance, 1),
         # ~45 km/h effective across a live construction site + 10 min mobilisation.
         eta_minutes=int(round(distance / 45.0 * 60)) + 10 if tech else 0,

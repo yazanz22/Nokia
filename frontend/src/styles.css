@@ -942,6 +942,11 @@ button:focus-visible {
   color: var(--text);
 }
 
+.wo-grid .via {
+  color: var(--ok);
+  font-size: 10.5px;
+}
+
 .wo-eta {
   display: flex;
   align-items: baseline;
@@ -1077,7 +1082,12 @@ button:focus-visible {
     gap: 1px 12px;
     font-size: 11.5px;
   }
-  .wo-eta {
+  .wo-grid .via {
+  color: var(--ok);
+  font-size: 10.5px;
+}
+
+.wo-eta {
     margin-top: 6px;
     padding-top: 6px;
   }

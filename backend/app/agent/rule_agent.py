@@ -181,14 +181,24 @@ async def run_rule_investigation(incident_id: str) -> None:
         ),
     )
 
-    wo = create_work_order(incident_id, asset_id, fault, loc)
+    await t.step(
+        "Now I need the nearest technician who is actually carrying the part. Crews move "
+        "between jobs, so I locate them the same way I located the machine — their phones "
+        "are on the same network.",
+        tool="camara.location_retrieval",
+        args={"subject": "available crew"},
+        observation="crew positions refreshed from the network",
+    )
+
+    wo = await create_work_order(incident_id, asset_id, fault, loc)
     await t.step(
         "Generated work order and assigned the nearest qualified technician.",
         tool="ops.create_work_order",
         args={"incident_id": incident_id, "asset_id": asset_id, "part": wo.part},
         observation=(
             f"{wo.id} -> {wo.technician_name or 'unassigned'} "
-            f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min) carrying {wo.part or 'n/a'}"
+            f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min) carrying {wo.part or 'n/a'}; "
+            f"crew position source={wo.technician_located_via}"
         ),
     )
 

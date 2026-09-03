@@ -102,12 +102,21 @@ class FaultPrediction(BaseModel):
 
 
 class Technician(BaseModel):
+    """A crew member — and, for our purposes, a phone on the same network.
+
+    Their position is not something we are told; it is something we ask the operator
+    for, exactly as we do for a silent machine. One API answers both halves of the
+    dispatch question: where is the broken asset, and who is actually nearest to it.
+    """
+
     id: str
     name: str
     latitude: float
     longitude: float
     available: bool = True
     parts_on_hand: list[str] = Field(default_factory=list)
+    # Where the position came from the last time we asked.
+    located_via: Literal["live", "mock", "seed"] = "seed"
 
 
 WorkOrderStatus = Literal["created", "assigned", "en_route", "completed"]
@@ -126,6 +135,8 @@ class WorkOrder(BaseModel):
     asset_longitude: float = 0.0
     technician_id: str | None = None
     technician_name: str = ""
+    # Whether the crew position that produced this assignment was network-verified.
+    technician_located_via: str = "seed"
     distance_km: float = 0.0
     eta_minutes: int = 0
 

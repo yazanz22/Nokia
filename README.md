@@ -78,6 +78,15 @@ Dispatched jobs then complete: the technician returns to the pool and the machin
 comes back online, so the fleet heals rather than draining away a crew member per
 incident.
 
+### Both ends of the dispatch are network-located
+
+A technician's phone is a device on the same network as the machine, so the same CAMARA
+Location Retrieval call answers both halves of the question: *where is the broken asset*,
+and *who is genuinely nearest to it*. Crews drive between jobs, so a rostered or
+last-known position is stale exactly when it matters — dispatching on one is how you send
+the second-nearest person. The agent asks instead, and the work order records whether the
+assignment was made against a network-verified position.
+
 ### It learns the site
 
 The agent records how each incident resolved against the machine and the patch of

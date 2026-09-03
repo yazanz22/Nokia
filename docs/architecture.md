@@ -26,7 +26,8 @@ the operator's network directly.
 
 CAMARA **Device Reachability Status** answers that. CAMARA **Location Retrieval**
 then answers "where is it?" for a device whose own GPS is dark and therefore cannot
-tell you.
+tell you — and answers it again for the crew, whose phones are on the same network,
+so "who is nearest" is asked rather than assumed.
 
 ## Layers
 

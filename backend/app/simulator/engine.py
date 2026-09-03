@@ -135,6 +135,12 @@ class SimulatorEngine:
                     ground_truth="NORMAL",
                 )
                 store.record_telemetry(sample)
+            # Crews drive between jobs. A stationary technician would make locating
+            # them pointless — you ask precisely because they have moved.
+            for tech in store.technicians.values():
+                if tech.available:
+                    tech.latitude += self._rng.uniform(-0.0015, 0.0015)
+                    tech.longitude += self._rng.uniform(-0.0015, 0.0015)
             store.advance_work_orders()
             store.publish_kpis()
             await asyncio.sleep(settings.sim_tick_seconds)

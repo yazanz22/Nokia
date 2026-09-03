@@ -18,7 +18,12 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
         <dt>Part</dt>
         <dd>{wo.part || "—"}</dd>
         <dt>Technician</dt>
-        <dd>{wo.technician_name || "unassigned"}</dd>
+        <dd>
+          {wo.technician_name || "unassigned"}
+          {wo.technician_located_via === "live" || wo.technician_located_via === "mock" ? (
+            <span className="via"> · network-located</span>
+          ) : null}
+        </dd>
         <dt>Position</dt>
         <dd>
           {wo.asset_latitude.toFixed(4)}, {wo.asset_longitude.toFixed(4)}

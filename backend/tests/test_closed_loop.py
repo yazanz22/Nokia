@@ -146,7 +146,7 @@ async def test_technicians_return_to_the_pool():
                          as_of=utcnow(), source="mock")
 
     for i in range(len(store.technicians)):
-        create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc)
+        await create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc)
     assert all(not t.available for t in store.technicians.values())
 
     for wo in store.work_orders.values():
@@ -156,9 +156,26 @@ async def test_technicians_return_to_the_pool():
     assert all(t.available for t in store.technicians.values())
     assert all(w.status == "completed" for w in store.work_orders.values())
     # And the next dispatch is assignable again.
-    wo = create_work_order("INC-99", "EQ-0099", fault, loc)
+    wo = await create_work_order("INC-99", "EQ-0099", fault, loc)
     assert wo.technician_id is not None
     assert wo.eta_minutes > 0
+
+
+@pytest.mark.asyncio
+async def test_crew_positions_come_from_the_network():
+    """Who is nearest is answered by asking, not by trusting a roster.
+
+    Crews drive between jobs, so a stored position is stale by the time it matters.
+    A technician's phone is a device on the same network as the machine, so the same
+    CAMARA Location Retrieval call resolves both ends of the dispatch.
+    """
+    asset_id, inc = await _investigate("hardware")
+    wos = [w for w in store.work_orders.values() if w.incident_id == inc.id]
+    assert len(wos) == 1
+    # The assignment was made against a position the network supplied, not the seed.
+    assert wos[0].technician_located_via in ("live", "mock")
+    tech = store.technicians[wos[0].technician_id]
+    assert tech.located_via in ("live", "mock")
 
 
 @pytest.mark.asyncio

@@ -268,7 +268,14 @@ def _build_agent():
             return "no fault found — dispatch withheld"
 
         loc = d.__dict__.get("_loc") or await get_device_location(d.asset_id)
-        wo = create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
+        await d.tracer.step(
+            "Locating the available crew — their phones are on the same network as the "
+            "machine, so the same call finds whoever is genuinely nearest.",
+            tool="camara.location_retrieval",
+            args={"subject": "available crew"},
+            observation="crew positions refreshed from the network",
+        )
+        wo = await create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
         await d.tracer.step(
             "Generated work order and assigned the nearest qualified technician.",
             tool="ops.create_work_order",

@@ -82,15 +82,16 @@ class MockNaCClient:
         # longer report).
         from ..store import store  # local import avoids a cycle
 
-        asset = store.assets.get(asset_id)
+        # Technicians are devices on the network too — same call, same contract.
+        subject = store.assets.get(asset_id) or store.technicians.get(asset_id)
         accuracy = self._rng.uniform(15.0, 60.0)
-        if asset is not None:
+        if subject is not None:
             # ~1 deg latitude ≈ 111 km; scatter within the accuracy circle.
             jitter_deg = accuracy / 111_000.0
             return DeviceLocation(
                 asset_id=asset_id,
-                latitude=asset.latitude + self._rng.uniform(-jitter_deg, jitter_deg),
-                longitude=asset.longitude + self._rng.uniform(-jitter_deg, jitter_deg),
+                latitude=subject.latitude + self._rng.uniform(-jitter_deg, jitter_deg),
+                longitude=subject.longitude + self._rng.uniform(-jitter_deg, jitter_deg),
                 accuracy_m=accuracy,
                 as_of=_now(),
                 source="mock",

@@ -25,6 +25,7 @@ export interface Technician {
   longitude: number;
   available: boolean;
   parts_on_hand: string[];
+  located_via: string;
 }
 
 export interface TelemetrySample {
@@ -82,6 +83,7 @@ export interface WorkOrder {
   technician_name: string;
   distance_km: number;
   eta_minutes: number;
+  technician_located_via: string;
 }
 
 export interface Kpis {
