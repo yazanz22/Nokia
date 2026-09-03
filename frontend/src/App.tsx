@@ -24,6 +24,9 @@ export default function App() {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  // The live sandbox panel is proof, not a working surface — it earns its space during
+  // the API part of a demo and is in the way for the rest of it.
+  const [nacOpen, setNacOpen] = useState(true);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
@@ -142,14 +145,24 @@ export default function App() {
               <ScenarioPanel assets={assets} />
             </div>
           </div>
-          <div className="panel">
+          <div className={`panel${nacOpen ? "" : " collapsed"}`}>
             <header>
               <h2>Network as Code</h2>
               <span className="note">sandbox</span>
+              <button
+                className="panel-toggle"
+                onClick={() => setNacOpen((v) => !v)}
+                aria-expanded={nacOpen}
+                title={nacOpen ? "Minimise panel" : "Expand panel"}
+              >
+                {nacOpen ? "−" : "+"}
+              </button>
             </header>
-            <div className="body">
-              <LiveCamaraPanel assetId={selectedAsset} />
-            </div>
+            {nacOpen && (
+              <div className="body">
+                <LiveCamaraPanel assetId={selectedAsset} />
+              </div>
+            )}
           </div>
           <div className="panel grow">
             <header>

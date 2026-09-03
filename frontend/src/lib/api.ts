@@ -44,3 +44,17 @@ export async function runLiveCheck(assetId?: string) {
   if (!r.ok) throw await failure(r);
   return r.json();
 }
+
+/** Operator signs the repair off by hand instead of waiting out the auto-complete timer. */
+export async function completeWorkOrder(id: string) {
+  const r = await fetch(`/api/work-orders/${encodeURIComponent(id)}/complete`, { method: "POST" });
+  if (!r.ok) throw await failure(r);
+  return r.json();
+}
+
+/** Cancel a job outright — releases the technician and returns the machine to service. */
+export async function deleteWorkOrder(id: string) {
+  const r = await fetch(`/api/work-orders/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!r.ok) throw await failure(r);
+  return r.json();
+}

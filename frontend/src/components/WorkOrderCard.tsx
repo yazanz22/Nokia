@@ -1,10 +1,34 @@
+import { useState } from "react";
+import { completeWorkOrder, deleteWorkOrder } from "../lib/api";
 import type { WorkOrder } from "../types";
 
 export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const done = wo.status === "completed";
+
+  // The list is driven by the websocket, so there is nothing to update locally —
+  // just guard against a double-click while the request is in flight.
+  const act = async (fn: (id: string) => Promise<unknown>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await fn(wo.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="wo">
+    <div className={`wo${done ? " wo-done" : ""}`}>
       <div className="wo-top">
-        <span className="wo-id">{wo.id}</span>
+        <span className="wo-id">
+          {wo.id}
+          <span className={`wo-status ${done ? "done" : "active"}`}>
+            {wo.status.replace("_", " ")}
+          </span>
+        </span>
         <span className="wo-fault">
           {wo.fault_mode.replace("_", " ")}
           <br />
@@ -48,6 +72,19 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
         </span>
         <span className="lbl">km</span>
       </div>
+
+      <div className="wo-actions">
+        {!done && (
+          <button className="btn tiny" disabled={busy} onClick={() => act(completeWorkOrder)}>
+            Mark complete
+          </button>
+        )}
+        <button className="btn tiny ghost" disabled={busy} onClick={() => act(deleteWorkOrder)}>
+          Delete
+        </button>
+      </div>
+
+      {err && <div className="hint err">{err}</div>}
     </div>
   );
 }

@@ -1127,3 +1127,84 @@ button:focus-visible {
     min-height: 100vh;
   }
 }
+
+/* ── work order actions & completed state ────────────────────────────── */
+.wo-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px dashed #56401a;
+}
+
+.btn.tiny {
+  padding: 5px 10px;
+  font-size: 11px;
+  flex: 1;
+}
+
+.wo-status {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  margin-left: 8px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.wo-status.active {
+  background: rgba(240, 168, 48, 0.16);
+  color: var(--dispatch);
+}
+
+.wo-status.done {
+  background: rgba(120, 200, 140, 0.14);
+  color: var(--ok, #78c88c);
+}
+
+/* A finished job stays on the board as a record, but stops competing for
+   attention with the one still running. */
+.wo-done {
+  border-color: var(--border-soft);
+  background: var(--surface-2);
+  opacity: 0.72;
+}
+
+.wo-done .wo-top {
+  border-bottom-color: var(--border-soft);
+}
+
+.wo-done .wo-actions {
+  border-top-color: var(--border-soft);
+}
+
+/* ── collapsible panel ───────────────────────────────────────────────── */
+.panel-toggle {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.panel-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent, var(--border));
+}
+
+/* Collapsed, the panel is just its header — it must not keep claiming column
+   height, otherwise minimising it buys nothing. */
+.panel.collapsed {
+  flex: 0 0 auto;
+}
