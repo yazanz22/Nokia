@@ -136,8 +136,10 @@ async def run_rule_investigation(incident_id: str) -> None:
         tool="ml.predict_fault",
         args={"asset_id": asset_id, "model": "fault-classifier"},
         observation=(
-            f"{fault.mode} @ {fault.confidence:.0%} (part: {fault.recommended_part or 'n/a'}). "
-            f"{fault.rationale}"
+            f"{fault.mode} @ {fault.confidence:.0%}"
+            + (f", component: {fault.component.replace('_', ' ')} "
+               f"@ {fault.component_confidence:.0%}" if fault.component else "")
+            + f" (part: {fault.recommended_part or 'n/a'}). {fault.rationale}"
         ),
     )
 

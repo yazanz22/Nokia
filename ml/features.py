@@ -40,13 +40,17 @@ def diagnostic_features(reading: dict) -> list[float]:
 
 # ── Prognosis (telemetry_history.csv) ───────────────────────────────────────
 
-# Channels ordered by how early they move: vibration and oil particles give days
-# of warning, pressure gives hours, temperature gives minutes.
+# Channels ordered by how early they move for a hydraulic pump: vibration and oil
+# particles give days of warning, pressure hours, temperature minutes. Other
+# components move them in a different order, which is what makes them separable.
 CHANNELS = [
     "vibration_mm_s",
     "oil_particle_count",
     "hydraulic_pressure_bar",
     "engine_temp_c",
+    # Purely electrical faults move nothing mechanical, so without this channel an
+    # alternator failure is invisible and gets mistaken for whatever else is drifting.
+    "battery_voltage_v",
 ]
 
 # Readings per window. At 6-hourly sampling, 8 readings = the trailing 2 days.
@@ -95,3 +99,14 @@ def prognostic_features(window: Sequence[dict]) -> list[float]:
         )
     feats.append(float(window[-1].get("engine_hours", 0.0)))
     return feats
+
+
+# What each component failure needs on the truck. Naming the part is the difference
+# between "something is wrong" and a first-time fix.
+COMPONENT_PARTS: dict[str, tuple[str, int]] = {
+    "hydraulic_pump": ("HYD-PUMP-40L", 3),
+    "cooling_system": ("RADIATOR-CORE-XL", 2),
+    "main_bearing": ("BEARING-SET-90", 4),
+    "alternator": ("ALTERNATOR-24V", 1),
+}
+COMPONENT_CLASSES = list(COMPONENT_PARTS)

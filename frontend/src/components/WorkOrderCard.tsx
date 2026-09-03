@@ -15,6 +15,8 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
       <dl className="wo-grid">
         <dt>Asset</dt>
         <dd>{wo.asset_id}</dd>
+        <dt>Component</dt>
+        <dd>{wo.component ? wo.component.replace(/_/g, " ") : "—"}</dd>
         <dt>Part</dt>
         <dd>{wo.part || "—"}</dd>
         <dt>Technician</dt>

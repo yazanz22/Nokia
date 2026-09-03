@@ -36,6 +36,7 @@ from sklearn.metrics import (
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from features import (  # noqa: E402
+    COMPONENT_CLASSES,
     DIAGNOSTIC_CLASSES,
     DIAGNOSTIC_FEATURES,
     PROGNOSTIC_FEATURES,
@@ -48,6 +49,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASET1 = ROOT / "data" / "dataset1.csv"
 HISTORY = ROOT / "data" / "telemetry_history.csv"
 MODEL_OUT = Path(__file__).resolve().parent / "model.pkl"
+COMPONENT_OUT = Path(__file__).resolve().parent / "component_model.pkl"
 FORECAST_OUT = Path(__file__).resolve().parent / "forecast_model.pkl"
 METRICS_OUT = Path(__file__).resolve().parent / "metrics.json"
 
@@ -128,6 +130,7 @@ def _build_windows(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
     y: list[int] = []
     assets: list[str] = []
     htf: list[float] = []
+    comp: list[str] = []
 
     for asset_id, g in df.groupby("device_id", sort=False):
         recs = g.to_dict("records")
@@ -138,8 +141,11 @@ def _build_windows(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
             assets.append(asset_id)
             raw = recs[i]["hours_to_failure"]
             htf.append(float(raw) if raw not in ("", None) and not pd.isna(raw) else np.nan)
+            c = recs[i].get("failing_component", "")
+            comp.append("" if pd.isna(c) else str(c))
 
-    return np.array(X, dtype=float), np.array(y), np.array(assets), np.array(htf, dtype=float)
+    return (np.array(X, dtype=float), np.array(y), np.array(assets),
+            np.array(htf, dtype=float), np.array(comp))
 
 
 def _temperature_baseline(df: pd.DataFrame, X_assets: np.ndarray) -> np.ndarray:
@@ -158,7 +164,7 @@ def train_prognostic() -> dict:
     print("                    (data/telemetry_history.csv)")
     print("=" * 62)
     df = pd.read_csv(HISTORY)
-    X, y, assets, htf = _build_windows(df)
+    X, y, assets, htf, comp = _build_windows(df)
     print(f"\n  {len(X):,} windows from {len(set(assets))} assets ({y.sum():,} positive)")
 
     train_ids, test_ids = _split_assets(assets.tolist())
@@ -225,7 +231,28 @@ def train_prognostic() -> dict:
     print("  more than a shift's notice. Vibration and oil-particle TRENDS move")
     print("  days out — which is the whole reason this needs a model.")
 
+    # ── which component is failing ──────────────────────────────────────────
+    # "Hardware fault" does not fill a van. Naming the component is what turns a
+    # dispatch into a first-time fix, so this is trained only on windows already
+    # inside a failure ramp — the question is which part, not whether.
+    print("\nCOMPONENT IDENTIFICATION — which part is failing?")
+    print("  " + "-" * 58)
+    inside = comp != ""
+    ctr = inside & tr
+    cte = inside & te
+    comp_clf = HistGradientBoostingClassifier(random_state=SEED, max_iter=300)
+    comp_clf.fit(X[ctr], comp[ctr])
+    cpred = comp_clf.predict(X[cte])
+    comp_acc = accuracy_score(comp[cte], cpred)
+    comp_f1 = f1_score(comp[cte], cpred, average="macro")
+    print(f"  train {ctr.sum():,} windows / test {cte.sum():,} (split by asset)")
+    print(f"  accuracy  {comp_acc:.3f}   macro F1  {comp_f1:.3f}")
+    print("\n" + classification_report(comp[cte], cpred, digits=3, zero_division=0))
+
     import joblib
+
+    joblib.dump(comp_clf, COMPONENT_OUT)
+    print(f"  wrote {COMPONENT_OUT.name}")
 
     joblib.dump({"horizons": horizons, "models": models}, FORECAST_OUT)
     print(f"\n  wrote {FORECAST_OUT.name} ({len(models)} horizon models)")
@@ -240,6 +267,9 @@ def train_prognostic() -> dict:
         "window_readings": WINDOW,
         "temperature_baseline_c": round(float(temp_thresh), 2),
         "detection_by_horizon": detect,
+        "component_accuracy": round(float(comp_acc), 4),
+        "component_macro_f1": round(float(comp_f1), 4),
+        "component_classes": COMPONENT_CLASSES,
         "features": PROGNOSTIC_FEATURES,
     }
 

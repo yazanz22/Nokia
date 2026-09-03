@@ -12,7 +12,7 @@ import logging
 
 from ..config import MODEL_PATH
 from ..models import FaultPrediction, TelemetrySample
-from ..seed import PARTS_CATALOGUE
+from ..seed import COMPONENT_PARTS, PARTS_CATALOGUE
 
 log = logging.getLogger("ml")
 
@@ -72,14 +72,36 @@ class FaultModel:
             probs = self._predict_rules(sample)
         mode = max(probs, key=probs.get)
         part, lead = PARTS_CATALOGUE.get(mode, ("", 0))
+        component = ""
+        comp_conf = 0.0
+        rationale = _RATIONALE[mode]
+
+        # A hardware fault is not a part. Ask the machine's own history which
+        # component is failing, and let that choose what goes on the truck.
+        if mode == "DEVICE_FAILURE":
+            from .forecast import forecast_model
+
+            found = forecast_model.identify_component(asset_id)
+            if found is not None:
+                component, comp_conf = found
+                if component in COMPONENT_PARTS:
+                    part, lead = COMPONENT_PARTS[component]
+                    rationale = (
+                        f"{rationale} Recent history points to the "
+                        f"{component.replace('_', ' ')} ({comp_conf:.0%} confidence), "
+                        f"so the technician needs a {part}."
+                    )
+
         return FaultPrediction(
             asset_id=asset_id,
             mode=mode,  # type: ignore[arg-type]
             confidence=round(probs[mode], 3),
             probabilities={k: round(v, 3) for k, v in probs.items()},
             recommended_part=part,
+            component=component,
+            component_confidence=round(comp_conf, 3),
             lead_days=lead,
-            rationale=_RATIONALE[mode],
+            rationale=rationale,
         )
 
     # ── trained model ───────────────────────────────────────────────────

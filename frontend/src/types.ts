@@ -75,6 +75,7 @@ export interface WorkOrder {
   created_at: string;
   status: string;
   fault_mode: string;
+  component: string;
   confidence: number;
   part: string;
   asset_latitude: number;

@@ -180,7 +180,10 @@ def _build_agent():
             "Ran the ML fault classifier.",
             tool="ml.predict_fault",
             args={"asset_id": ctx.deps.asset_id},
-            observation=f"{fault.mode} @ {fault.confidence:.0%}. {fault.rationale}",
+            observation=(f"{fault.mode} @ {fault.confidence:.0%}"
+                         + (f", component: {fault.component.replace('_', ' ')}"
+                            if fault.component else "")
+                         + f". {fault.rationale}"),
         )
         return f"{fault.mode} confidence={fault.confidence:.2f} part={fault.recommended_part}"
 

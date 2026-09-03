@@ -36,8 +36,15 @@ async def test_hardware_dispatches_with_part_and_technician():
     assert len(wos) == 1
     wo = wos[0]
     assert wo.technician_id is not None
-    assert wo.part == "HYD-PUMP-40L"
     assert wo.eta_minutes > 0
+    # The part is no longer fixed: it follows from whichever component the machine's
+    # own history says is failing, and the assigned technician must be carrying it.
+    from app.seed import COMPONENT_PARTS
+
+    assert wo.part in {p for p, _ in COMPONENT_PARTS.values()}
+    assert wo.component in COMPONENT_PARTS
+    assert wo.part == COMPONENT_PARTS[wo.component][0]
+    assert wo.part in store.technicians[wo.technician_id].parts_on_hand
 
 
 @pytest.mark.asyncio

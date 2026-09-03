@@ -94,6 +94,10 @@ class FaultPrediction(BaseModel):
     confidence: float
     probabilities: dict[str, float] = Field(default_factory=dict)
     recommended_part: str = ""
+    # Which component the history says is failing, and how sure. "Hardware fault"
+    # does not fill a van; naming the part is what makes it a first-time fix.
+    component: str = ""
+    component_confidence: float = 0.0
     lead_days: int = 0
     rationale: str = ""
 
@@ -129,6 +133,7 @@ class WorkOrder(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     status: WorkOrderStatus = "created"
     fault_mode: str = ""
+    component: str = ""
     confidence: float = 0.0
     part: str = ""
     asset_latitude: float = 0.0

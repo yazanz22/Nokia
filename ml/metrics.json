@@ -30,40 +30,48 @@
       48.0,
       72.0
     ],
-    "windows_train": 39371,
-    "windows_test": 12975,
-    "roc_auc": 0.9999,
-    "pr_auc": 0.9992,
+    "windows_train": 39449,
+    "windows_test": 12987,
+    "roc_auc": 0.9997,
+    "pr_auc": 0.9983,
     "horizon_hours": 72.0,
     "window_readings": 8,
-    "temperature_baseline_c": 94.57,
+    "temperature_baseline_c": 94.8,
     "detection_by_horizon": {
       "96-120h": {
         "model_detection_rate": 0.0,
-        "temperature_rule_detection_rate": 0.022,
-        "n_windows": 590
+        "temperature_rule_detection_rate": 0.0425,
+        "n_windows": 588
       },
       "72-96h": {
-        "model_detection_rate": 0.0412,
-        "temperature_rule_detection_rate": 0.0132,
-        "n_windows": 607
+        "model_detection_rate": 0.0726,
+        "temperature_rule_detection_rate": 0.1318,
+        "n_windows": 592
       },
       "48-72h": {
-        "model_detection_rate": 0.9391,
-        "temperature_rule_detection_rate": 0.0197,
-        "n_windows": 608
+        "model_detection_rate": 0.9375,
+        "temperature_rule_detection_rate": 0.1959,
+        "n_windows": 592
       },
       "24-48h": {
         "model_detection_rate": 1.0,
-        "temperature_rule_detection_rate": 0.0115,
-        "n_windows": 608
+        "temperature_rule_detection_rate": 0.1993,
+        "n_windows": 592
       },
       "0-24h": {
         "model_detection_rate": 1.0,
-        "temperature_rule_detection_rate": 0.176,
-        "n_windows": 608
+        "temperature_rule_detection_rate": 0.3142,
+        "n_windows": 592
       }
     },
+    "component_accuracy": 0.8831,
+    "component_macro_f1": 0.8702,
+    "component_classes": [
+      "hydraulic_pump",
+      "cooling_system",
+      "main_bearing",
+      "alternator"
+    ],
     "features": [
       "vibration_mm_s_last",
       "vibration_mm_s_mean",
@@ -85,6 +93,11 @@
       "engine_temp_c_std",
       "engine_temp_c_slope",
       "engine_temp_c_delta",
+      "battery_voltage_v_last",
+      "battery_voltage_v_mean",
+      "battery_voltage_v_std",
+      "battery_voltage_v_slope",
+      "battery_voltage_v_delta",
       "engine_hours"
     ]
   }

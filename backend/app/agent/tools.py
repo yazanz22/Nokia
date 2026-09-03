@@ -257,6 +257,7 @@ async def create_work_order(
         asset_id=asset_id,
         status="assigned" if tech else "created",
         fault_mode=fault.mode,
+        component=fault.component,
         confidence=fault.confidence,
         part=part,
         asset_latitude=location.latitude,

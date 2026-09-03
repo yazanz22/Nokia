@@ -48,27 +48,65 @@ BASE_VIBRATION = 2.4      # mm/s RMS
 BASE_PARTICLES = 120.0    # ISO particle count per ml
 BASE_PRESSURE = 210.0     # bar
 BASE_TEMP = 82.0          # deg C
+BASE_VOLTAGE = 27.8       # V, 24V system under charge
 
 READINGS_PER_DAY = 4      # 6-hourly
 DEGRADE_DAYS = 5.0        # how long the run-to-failure ramp lasts
 
 
-def _degradation(progress: float) -> tuple[float, float, float, float]:
-    """Signal multipliers/offsets at ``progress`` through the failure ramp (0..1).
+# ── What actually breaks, and how each one announces itself ──────────────────
+#
+# A dispatch is only as good as the part on the truck, so the model has to name the
+# component rather than just say "hardware". Each of these fails with a different
+# signature across the same five channels, which is what makes them separable:
+#
+#   hydraulic_pump   bearing wear -> vibration and metal in the oil, then pressure
+#                    sags as seals pass, then temperature spikes at the very end
+#   cooling_system   temperature climbs early and stays climbing; nothing else moves
+#   main_bearing     vibration dominates from the start, some metal, little else
+#   alternator       purely electrical: charge voltage decays, mechanics stay normal
+#
+# The point is that temperature — the channel a threshold alarm watches — is the
+# last to move for the pump, never moves for the alternator, and is the *only*
+# signal for cooling. One threshold cannot tell these apart.
+COMPONENTS = ("hydraulic_pump", "cooling_system", "main_bearing", "alternator")
+COMPONENT_WEIGHTS = (0.45, 0.22, 0.21, 0.12)
 
-    Each channel has its own onset, so the signals arrive in physical order.
+
+def _degradation(component: str, progress: float) -> tuple[float, float, float, float, float]:
+    """Channel offsets at ``progress`` (0..1) through this component's failure ramp.
+
+    Returns (vibration, oil particles, hydraulic pressure, engine temp, voltage).
     """
-    # Vibration: starts immediately, roughly linear then accelerating.
-    vib = 3.9 * (progress ** 1.5)
-    # Oil particles: starts immediately, accelerating harder (metal shedding).
-    part = 640.0 * (progress ** 2.0)
-    # Pressure: nothing until ~60% through, then falls away.
-    p = max(0.0, (progress - 0.60) / 0.40)
-    press = -46.0 * (p ** 1.4)
-    # Temperature: nothing until ~93% through (the last ~8 hours), then spikes.
-    t = max(0.0, (progress - 0.93) / 0.07)
-    temp = 44.0 * (t ** 1.2)
-    return vib, part, press, temp
+    vib = part = press = temp = volt = 0.0
+
+    if component == "hydraulic_pump":
+        vib = 3.9 * (progress ** 1.5)
+        part = 640.0 * (progress ** 2.0)
+        p = max(0.0, (progress - 0.60) / 0.40)      # seals start passing at ~60%
+        press = -46.0 * (p ** 1.4)
+        t = max(0.0, (progress - 0.93) / 0.07)      # heat only in the last ~8 hours
+        temp = 44.0 * (t ** 1.2)
+
+    elif component == "cooling_system":
+        # Heat is the whole story, and it starts early — the opposite of the pump.
+        temp = 40.0 * (progress ** 1.15)
+        vib = 0.35 * progress                        # negligible
+        press = -4.0 * progress
+
+    elif component == "main_bearing":
+        # Violent mechanically, quiet everywhere else until the very end.
+        vib = 7.8 * (progress ** 1.3)
+        part = 300.0 * (progress ** 2.2)
+        t = max(0.0, (progress - 0.85) / 0.15)
+        temp = 14.0 * t
+
+    elif component == "alternator":
+        # Nothing mechanical at all: the charge system simply decays.
+        volt = -4.6 * (progress ** 1.6)
+        temp = 3.0 * progress
+
+    return vib, part, press, temp, volt
 
 
 def generate(
@@ -104,6 +142,7 @@ def generate(
         ramp_steps = int(DEGRADE_DAYS * READINGS_PER_DAY)
         repair_steps = READINGS_PER_DAY * 2  # ~2 days out of service
         fail_points: list[int] = []
+        fail_components: dict[int, str] = {}
         # Start each machine at its own random offset and advance by a jittered
         # stride, otherwise every asset fails on the same grid of indices and the
         # fleet's time-to-failure values come out suspiciously identical.
@@ -111,6 +150,7 @@ def generate(
         while cursor < n_steps:
             if py_rng.random() < failure_rate:
                 fail_points.append(cursor)
+                fail_components[cursor] = py_rng.choices(COMPONENTS, COMPONENT_WEIGHTS)[0]
                 cursor += repair_steps + ramp_steps + py_rng.randint(0, ramp_steps)
             else:
                 cursor += py_rng.randint(2, max(3, ramp_steps))
@@ -136,20 +176,25 @@ def generate(
             part = BASE_PARTICLES + part_bias + engine_hours * 0.004 + float(rng.normal(0, 11.0))
             press = BASE_PRESSURE + press_bias - duty * 3.0 + float(rng.normal(0, 3.4))
             temp = BASE_TEMP + temp_bias + duty * 6.0 + drift + float(rng.normal(0, 2.1))
+            volt = BASE_VOLTAGE + float(rng.normal(0, 0.18))
 
             hours_to_failure = None
+            failing_component = ""
             nxt = _next_failure(i)
             if nxt is not None:
                 hours_left = (nxt - i) * (24 / READINGS_PER_DAY)
                 hours_to_failure = hours_left
                 ramp_hours = DEGRADE_DAYS * 24
+                component = fail_components.get(nxt, COMPONENTS[0])
                 if hours_left <= ramp_hours:
                     progress = 1.0 - (hours_left / ramp_hours)
-                    d_vib, d_part, d_press, d_temp = _degradation(progress)
+                    d_vib, d_part, d_press, d_temp, d_volt = _degradation(component, progress)
                     vib += d_vib
                     part += d_part
                     press += d_press
                     temp += d_temp
+                    volt += d_volt
+                    failing_component = component
 
             rows.append(
                 {
@@ -160,12 +205,15 @@ def generate(
                     "oil_particle_count": round(max(10.0, part), 1),
                     "hydraulic_pressure_bar": round(press, 2),
                     "engine_temp_c": round(temp, 2),
+                    "battery_voltage_v": round(volt, 3),
                     "hours_to_failure": (
                         round(hours_to_failure, 1) if hours_to_failure is not None else ""
                     ),
                     "will_fail_72h": int(
                         hours_to_failure is not None and hours_to_failure <= 72
                     ),
+                    # Which component is on its way out, once the ramp has begun.
+                    "failing_component": failing_component,
                 }
             )
 
@@ -174,6 +222,10 @@ def generate(
     print(f"Generated {len(df):,} readings across {df['device_id'].nunique()} assets.")
     print(f"  assets entering failure within the window : {n_fail_assets}")
     print(f"  readings labelled will_fail_72h=1         : {int(df['will_fail_72h'].sum()):,}")
+    mix = df[df["failing_component"] != ""]["failing_component"].value_counts()
+    print("  readings inside a failure ramp, by component:")
+    for k, v in mix.items():
+        print(f"      {k:16s} {v:6,}")
     return df
 
 

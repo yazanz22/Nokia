@@ -39,7 +39,18 @@ _SITES = [
     "NEOM — Hidden Marina Cut",
 ]
 
-# fault mode -> (spare part code, lead time days)
+# What each failing component needs on the truck.
+COMPONENT_PARTS: dict[str, tuple[str, int]] = {
+    "hydraulic_pump": ("HYD-PUMP-40L", 3),
+    "cooling_system": ("RADIATOR-CORE-XL", 2),
+    "main_bearing": ("BEARING-SET-90", 4),
+    "alternator": ("ALTERNATOR-24V", 1),
+}
+
+# Fallback by fault mode, for when the component model has nothing to go on. A
+# sensor fault needs no component diagnosis — the sensor is the fault — and a
+# hardware fault we cannot pin down still gets the commonest part rather than
+# an empty work order.
 PARTS_CATALOGUE: dict[str, tuple[str, int]] = {
     "DEVICE_FAILURE": ("HYD-PUMP-40L", 3),
     "SENSOR_FAILURE": ("TELEMETRY-SENSOR-KIT", 1),
@@ -134,7 +145,7 @@ def build_technicians() -> list[Technician]:
     lons = [a.longitude for a in fleet]
     lat_lo, lat_hi = min(lats), max(lats)
     lon_lo, lon_hi = min(lons), max(lons)
-    all_parts = [p for p, _ in PARTS_CATALOGUE.values() if p]
+    all_parts = [p for p, _ in COMPONENT_PARTS.values()]
     names = [
         "Khalid Al-Otaibi",
         "Mariam Haddad",
@@ -152,8 +163,15 @@ def build_technicians() -> list[Technician]:
                 latitude=rng.uniform(lat_lo, lat_hi),
                 longitude=rng.uniform(lon_lo, lon_hi),
                 available=True,
-                # Everyone carries the sensor kit; pumps split across the crew.
-                parts_on_hand=list({all_parts[i % len(all_parts)], "TELEMETRY-SENSOR-KIT"}),
+                # Everyone carries the sensor kit. The four component parts are split
+                # across six people, so two carry a second one — which is why "nearest"
+                # and "nearest who can actually fix it" are different questions.
+                parts_on_hand=sorted(
+                    {all_parts[i % len(all_parts)],
+                     all_parts[(i + 2) % len(all_parts)] if i >= len(all_parts) else
+                     all_parts[i % len(all_parts)],
+                     "TELEMETRY-SENSOR-KIT"}
+                ),
             )
         )
     return techs

@@ -126,7 +126,25 @@ So the forecasting model is scored on warning time, not accuracy:
 | 0–24 h | 100% | 18% |
 
 It answers *how soon* by asking the same question at 24 / 48 / 72 h and reporting the tightest horizon
-it clears — the estimate comes from the models, never from the label. On synthetic data the AUC is
+it clears — the estimate comes from the models, never from the label.
+
+### And *which part* — because "hardware fault" does not fill a van
+
+Four components fail with different signatures across the same channels, which is what
+makes them separable:
+
+| Component | How it announces itself | Part |
+|---|---|---|
+| Hydraulic pump | vibration + metal in the oil, then pressure sags, heat only at the end | `HYD-PUMP-40L` |
+| Cooling system | heat climbs early and keeps climbing; nothing else moves | `RADIATOR-CORE-XL` |
+| Main bearing | vibration dominates from the start, some metal, little else | `BEARING-SET-90` |
+| Alternator | purely electrical — charge voltage decays, mechanics stay normal | `ALTERNATOR-24V` |
+
+Temperature is the *last* signal for the pump, the *only* signal for cooling, and never
+moves for the alternator. One threshold cannot separate these. A classifier over the
+trailing window identifies the component at **88.3% accuracy (0.870 macro F1)**, and the
+part on the work order follows from it — which is also why the nearest technician is
+often not the right one. On synthetic data the AUC is
 ~1.0, which is why we don't quote it; the warning-time gap is the claim, and it follows from the
 physics being modelled rather than the classifier being clever.
 

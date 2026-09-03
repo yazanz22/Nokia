@@ -17,6 +17,7 @@ DATASET_PATH = REPO_ROOT / "data" / "dataset1.csv"
 HISTORY_PATH = REPO_ROOT / "data" / "telemetry_history.csv"
 MODEL_PATH = REPO_ROOT / "ml" / "model.pkl"
 FORECAST_MODEL_PATH = REPO_ROOT / "ml" / "forecast_model.pkl"
+COMPONENT_MODEL_PATH = REPO_ROOT / "ml" / "component_model.pkl"
 
 
 class Settings(BaseSettings):

@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..config import FORECAST_MODEL_PATH, HISTORY_PATH, get_settings
+from ..config import COMPONENT_MODEL_PATH, FORECAST_MODEL_PATH, HISTORY_PATH, get_settings
 
 log = logging.getLogger("ml.forecast")
 
@@ -62,6 +62,7 @@ def _history() -> dict[str, list[dict[str, Any]]]:
                     "oil_particle_count": float(raw["oil_particle_count"]),
                     "hydraulic_pressure_bar": float(raw["hydraulic_pressure_bar"]),
                     "engine_temp_c": float(raw["engine_temp_c"]),
+                    "battery_voltage_v": float(raw.get("battery_voltage_v") or 27.8),
                 }
             )
     for rows in by_asset.values():
@@ -73,6 +74,7 @@ class ForecastModel:
     def __init__(self) -> None:
         self._models: dict[float, Any] = {}
         self._horizons: list[float] = []
+        self._component: Any = None
         self._load()
 
     def _load(self) -> None:
@@ -86,6 +88,9 @@ class ForecastModel:
             self._models = blob["models"]
             self._horizons = sorted(blob["horizons"])
             log.info("loaded forecast models for horizons %s", self._horizons)
+            if COMPONENT_MODEL_PATH.exists():
+                self._component = joblib.load(COMPONENT_MODEL_PATH)
+                log.info("loaded component identification model")
         except Exception as exc:  # noqa: BLE001
             log.warning("could not load %s: %s", FORECAST_MODEL_PATH, exc)
 
@@ -129,6 +134,26 @@ class ForecastModel:
             "engine_temp_c": round(latest["engine_temp_c"], 1),
             "as_of": latest["timestamp"].isoformat(),
         }
+
+    def identify_component(self, asset_id: str) -> tuple[str, float] | None:
+        """Name the failing component from the machine's recent history.
+
+        "Hardware fault" does not fill a van. Each component announces itself
+        differently across the same channels — a cooling fault is heat with no
+        vibration precursor, an alternator is voltage with nothing mechanical at all
+        — so the trailing window can say which part the technician needs.
+        """
+        if self._component is None:
+            return None
+        feats = _load_features_module()
+        rows = _history().get(asset_id) or []
+        if len(rows) < feats.WINDOW:
+            return None
+        x = [feats.prognostic_features(rows[-feats.WINDOW :])]
+        proba = self._component.predict_proba(x)[0]
+        classes = list(self._component.classes_)
+        best = int(proba.argmax())
+        return str(classes[best]), float(proba[best])
 
     def score_fleet(self, asset_ids: list[str]) -> list[dict[str, Any]]:
         out = [s for aid in asset_ids if (s := self.score_asset(aid)) is not None]
