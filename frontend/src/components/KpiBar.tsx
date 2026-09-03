@@ -61,7 +61,7 @@ export function KpiBar({ kpis }: { kpis: Kpis | null }) {
           k.false_dispatches_avoided > 0
             ? `${money(k.false_dispatches_avoided * TRUCK_ROLL_LOW)}–${money(
                 k.false_dispatches_avoided * TRUCK_ROLL_HIGH
-              )} not spent`
+              )} saved`
             : undefined
         }
         noteTitle="Illustrative: $250–$1,000 per truck roll (docs/EVIDENCE.md). Not a measured saving."
