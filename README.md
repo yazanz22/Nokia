@@ -22,6 +22,21 @@ Every step of the agent's reasoning is streamed to a live operator dashboard.
 
 ---
 
+## Is this a real problem?
+
+Yes, and the industry already has a name for it. A wasted field visit is a **truck roll**
+— $150–$500 direct, closer to $1,000 all-in — and **"no fault found"** is the standard
+term for the trip where the technician arrives and there is nothing to repair. Many
+operators run a first-visit completion rate of only 75–85%.
+
+Meanwhile the machines really are on mobile networks (**73% of construction telematics is
+cellular**) and really do drop off them: coverage on active sites is *"often
+inconsistent"* as terrain changes and zones open and close. NEOM is being built right now
+with STC as its network partner — the exact environment where asking the operator's
+network is possible.
+
+Sources and the claims we deliberately do **not** make: [docs/EVIDENCE.md](docs/EVIDENCE.md).
+
 ## Why the network call is irreplaceable
 
 When an asset stops sending telemetry you cannot work out *why* from the asset — it
