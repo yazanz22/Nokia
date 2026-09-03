@@ -156,7 +156,9 @@ async def run_rule_investigation(incident_id: str) -> None:
             args={"asset_id": asset_id, "at": recheck_at.isoformat()},
             observation="re-check queued; operator notified; no dispatch",
         )
-        store.set_asset_state(asset_id, "healthy")
+        # Judged healthy, so the heartbeat has to come back — otherwise the detector
+        # re-opens this same incident in thirty seconds and we investigate forever.
+        store.resume_telemetry(asset_id)
         store.record_blindspot_avoided()
         store.close_incident(
             inc,

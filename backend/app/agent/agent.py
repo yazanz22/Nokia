@@ -146,6 +146,18 @@ def _build_agent():
         """TERMINAL: device is on a foreign network — raise a connectivity ticket, no dispatch."""
         d = ctx.deps
         reach = d._reach
+        if reach is None:
+            reach = await check_device_status(d.asset_id)
+            d._reach = reach
+        # Same rule as the dispatch guard, for the same reason: a terminal tool decides
+        # from the network evidence, not from the model's say-so. Closing a genuine
+        # breakdown as a roaming ticket strands a broken machine in the desert — the
+        # mirror image of a wasted dispatch, and the more expensive mistake.
+        if assess_silence(reach).category != "roaming_out":
+            return (
+                "refused: the device is not attached to a foreign network, so this is not a "
+                "roaming event. Reassess with assess_coverage and take the matching action."
+            )
         country = getattr(reach, "country", None) or "a foreign"
         recheck_at = schedule_recheck(d.asset_id, minutes=30)
         await d.tracer.step(
@@ -204,6 +216,22 @@ def _build_agent():
     async def resolve_as_blindspot(ctx: RunContext[Deps], reason: str) -> str:
         """TERMINAL: log a cellular blind spot, schedule a re-check, notify the operator, no dispatch."""
         d = ctx.deps
+        reach = d._reach
+        if reach is None:
+            reach = await check_device_status(d.asset_id)
+            d._reach = reach
+        # A blind spot is a claim about the network, so the network evidence has to
+        # support it. Without this the model can close a real hardware failure as a
+        # coverage gap and nobody is ever sent — a silent false negative that looks
+        # exactly like the product working.
+        v = assess_silence(reach)
+        if v.category == "roaming_out":
+            return await resolve_as_roaming(ctx)
+        if v.category != "coverage_gap":
+            return (
+                f"refused: the network evidence does not show a coverage gap. {v.explanation} "
+                "Run predict_fault_tool and dispatch if the machine is actually broken."
+            )
         recheck_at = schedule_recheck(d.asset_id, minutes=15)
         await d.tracer.step(
             "Logged a cellular blind spot. Re-check scheduled, operator notified, no dispatch.",
@@ -255,7 +283,9 @@ def _build_agent():
                 observation="no dispatch",
             )
             inc = store.incidents[d.incident_id]
-            store.set_asset_state(d.asset_id, "healthy")
+            # Judged healthy, so the heartbeat has to come back — otherwise the detector
+            # re-opens this same incident in thirty seconds and we investigate forever.
+            store.resume_telemetry(d.asset_id)
             store.record_blindspot_avoided()
             store.close_incident(
                 inc,

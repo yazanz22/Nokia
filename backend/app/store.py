@@ -143,6 +143,19 @@ class Store:
                 self.publish_technicians()
         bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
 
+    def resume_telemetry(self, asset_id: str) -> None:
+        """Put a machine we have judged healthy back into service.
+
+        Deciding an asset is fine is only half the answer — the simulator is still
+        withholding its heartbeat, so ``last_seen`` never advances and the detector
+        opens a fresh incident on it seconds later. Clearing the scenario is what
+        makes "no fault found" actually mean the machine came back.
+        """
+        from .simulator import simulator
+
+        simulator.clear(asset_id)
+        self.set_asset_state(asset_id, "healthy", last_seen=utcnow())
+
     def complete_work_order(self, wo: WorkOrder) -> None:
         """Finish a job: free the crew, put the machine back into service.
 
