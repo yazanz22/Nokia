@@ -246,6 +246,11 @@ async def create_work_order(
             key=lambda pair: pair[1],
         )
 
+    # Only worth mentioning if they were genuinely nearer than whoever we chose.
+    # Otherwise the card would state something untrue.
+    if skipped_closer is not None and skipped_km >= distance:
+        skipped_closer = None
+
     wo = WorkOrder(
         id=store.next_work_order_id(),
         incident_id=incident_id,
@@ -259,11 +264,11 @@ async def create_work_order(
         technician_id=tech.id if tech else None,
         technician_name=tech.name if tech else "",
         technician_located_via=crew_source,
-        nearest_skipped_name=skipped_closer.name if skipped_closer else "",
-        nearest_skipped_km=round(skipped_km, 1) if skipped_closer else 0.0,
         distance_km=round(distance, 1),
         # ~45 km/h effective across a live construction site + 10 min mobilisation.
         eta_minutes=int(round(distance / 45.0 * 60)) + 10 if tech else 0,
+        nearest_skipped_name=skipped_closer.name if skipped_closer else "",
+        nearest_skipped_km=round(skipped_km, 1) if skipped_closer else 0.0,
     )
     store.add_work_order(wo)
     return wo
