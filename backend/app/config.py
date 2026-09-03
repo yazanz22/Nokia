@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     sim_tick_seconds: float = 2.0
     silent_threshold_seconds: int = 30
     demo_fleet_size: int = 30
+    # A real repair takes the work order's ETA. Nothing would ever complete inside a
+    # demo at that rate, so dispatched jobs finish after this many seconds of wall
+    # clock instead — the technician returns to the pool and the machine comes back
+    # online. Without it the six technicians are permanently busy after six dispatches
+    # and every later work order is raised with nobody assigned.
+    work_order_complete_seconds: int = 90
     # "Now" for the predictive-maintenance view: telemetry history is replayed up to
     # this instant, so the fleet shows a mix of healthy and mid-degradation machines
     # rather than only ones that have already died.

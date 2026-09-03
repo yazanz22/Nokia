@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type {
   Asset,
+  DeadZone,
   Incident,
   Kpis,
   Technician,
@@ -19,6 +20,7 @@ export interface LiveState {
   latestTelemetry: Record<string, TelemetrySample>;
   telemetryHistory: Record<string, TelemetrySample[]>;
   kpis: Kpis | null;
+  deadZones: DeadZone[];
 }
 
 const HISTORY_CAP = 48;
@@ -32,6 +34,7 @@ const empty: LiveState = {
   latestTelemetry: {},
   telemetryHistory: {},
   kpis: null,
+  deadZones: [],
 };
 
 function pushHistory(
@@ -64,6 +67,7 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
         latestTelemetry: p.latest_telemetry ?? {},
         telemetryHistory: {},
         kpis: p.kpis ?? null,
+        deadZones: p.dead_zones ?? [],
       };
     }
     case "telemetry": {
@@ -100,6 +104,8 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
     }
     case "kpis":
       return { ...state, kpis: ev.payload as Kpis };
+    case "dead_zones":
+      return { ...state, deadZones: (ev.payload?.zones ?? []) as DeadZone[] };
     default:
       return state;
   }

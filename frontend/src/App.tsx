@@ -113,6 +113,7 @@ export default function App() {
               assets={assets}
               technicians={technicians}
               workOrders={workOrders}
+              deadZones={state.deadZones}
               selectedId={selectedAsset}
               onSelect={setSelectedAsset}
             />

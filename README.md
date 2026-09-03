@@ -59,6 +59,10 @@ ordinary event on that site.
 
 One dispatch among five outcomes. That ratio is the product.
 
+Dispatched jobs then complete: the technician returns to the pool and the machine
+comes back online, so the fleet heals rather than draining away a crew member per
+incident.
+
 ### It learns the site
 
 The agent records how each incident resolved against the machine and the patch of
@@ -67,6 +71,10 @@ time a machine goes quiet in the same cell, the agent opens with *"this is a kno
 zone, not a run of bad luck"* and says so in its verdict, rather than investigating
 from scratch and letting nobody notice the pattern. Memory survives a fleet reset —
 the fleet is state, what the agent learned about the terrain is knowledge.
+
+Those learned dead zones are drawn on the site map. It is a coverage map nobody had
+to survey for: it falls out of the agent doing its job, and it tells the network team
+exactly where to look.
 
 Both datasets are synthetic and their generators are in the repo
 (`data/dataset_builder.py`, `data/history_builder.py`). Numbers computed from them

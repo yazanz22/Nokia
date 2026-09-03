@@ -5,6 +5,7 @@ import pytest
 from app.agent import run_investigation
 from app.agent.memory import memory
 from app.simulator import simulator
+from app.models import utcnow
 from app.store import store
 
 
@@ -123,6 +124,41 @@ async def test_agent_learns_recurring_dead_zones():
     store.reset()
     simulator.reseed()
     assert memory.size == 2
+
+
+@pytest.mark.asyncio
+async def test_technicians_return_to_the_pool():
+    """A fleet that only ever loses technicians is not a fleet.
+
+    Six dispatches used to exhaust the crew permanently, after which every work order
+    was raised with nobody assigned and an ETA of zero — a broken-looking card on any
+    extended run.
+    """
+    from datetime import timedelta
+
+    from app.agent.tools import create_work_order
+    from app.models import FaultPrediction
+    from app.nac.base import DeviceLocation
+
+    fault = FaultPrediction(asset_id="EQ-0001", mode="DEVICE_FAILURE", confidence=0.9,
+                            recommended_part="HYD-PUMP-40L")
+    loc = DeviceLocation(asset_id="EQ-0001", latitude=27.5, longitude=35.0, accuracy_m=50.0,
+                         as_of=utcnow(), source="mock")
+
+    for i in range(len(store.technicians)):
+        create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc)
+    assert all(not t.available for t in store.technicians.values())
+
+    for wo in store.work_orders.values():
+        wo.created_at = wo.created_at - timedelta(seconds=10_000)
+    store.advance_work_orders()
+
+    assert all(t.available for t in store.technicians.values())
+    assert all(w.status == "completed" for w in store.work_orders.values())
+    # And the next dispatch is assignable again.
+    wo = create_work_order("INC-99", "EQ-0099", fault, loc)
+    assert wo.technician_id is not None
+    assert wo.eta_minutes > 0
 
 
 @pytest.mark.asyncio

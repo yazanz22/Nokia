@@ -27,16 +27,22 @@ export function FleetHealthPanel({ onSelect }: { onSelect: (id: string) => void 
 
   useEffect(() => {
     let cancelled = false;
-    getFleetHealth()
-      .then((d) => {
-        if (cancelled) return;
-        setAvailable(d.available);
-        setAtRisk(d.at_risk ?? 0);
-        setRows(d.assets ?? []);
-      })
-      .catch(() => setAvailable(false));
+    const load = () =>
+      getFleetHealth()
+        .then((d) => {
+          if (cancelled) return;
+          setAvailable(d.available);
+          setAtRisk(d.at_risk ?? 0);
+          setRows(d.assets ?? []);
+        })
+        .catch(() => setAvailable(false));
+    load();
+    // Forecasts move as the fleet does. Loading once left this panel showing a
+    // snapshot from whenever the tab happened to open.
+    const timer = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 

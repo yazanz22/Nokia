@@ -153,6 +153,7 @@ EventType = Literal[
     "trace_step",
     "work_order",
     "kpis",
+    "dead_zones",
 ]
 
 

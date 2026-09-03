@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Asset, Technician, WorkOrder } from "../types";
+import type { Asset, DeadZone, Technician, WorkOrder } from "../types";
 
 const W = 900;
 const H = 640;
@@ -25,6 +25,7 @@ interface Props {
   assets: Asset[];
   technicians: Technician[];
   workOrders: WorkOrder[];
+  deadZones: DeadZone[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }
@@ -60,7 +61,7 @@ function inflate(poly: [number, number][], by: number): [number, number][] {
   });
 }
 
-export function FleetMap({ assets, technicians, workOrders, selectedId, onSelect }: Props) {
+export function FleetMap({ assets, technicians, workOrders, deadZones, selectedId, onSelect }: Props) {
   const project = useMemo(() => {
     const pts = [...assets, ...technicians];
     if (pts.length === 0) return () => [W / 2, H / 2] as [number, number];
@@ -115,6 +116,11 @@ export function FleetMap({ assets, technicians, workOrders, selectedId, onSelect
           <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
             <feGaussianBlur stdDeviation="9" />
           </filter>
+          <pattern id="deadzone" width="7" height="7" patternUnits="userSpaceOnUse"
+                   patternTransform="rotate(45)">
+            <rect width="7" height="7" fill="#5aa9e6" opacity="0.07" />
+            <line x1="0" y1="0" x2="0" y2="7" stroke="#5aa9e6" strokeWidth="1.4" opacity="0.3" />
+          </pattern>
         </defs>
 
         <rect width={W} height={H} fill="url(#terrain)" />
@@ -127,6 +133,27 @@ export function FleetMap({ assets, technicians, workOrders, selectedId, onSelect
           <path d="M-20 430 Q 230 372 450 438 T 850 408 T 960 442" strokeWidth="1" />
           <path d="M-20 496 Q 240 440 460 502 T 860 472 T 960 506" strokeWidth="1" />
         </g>
+
+        {/* Coverage the agent has learned is bad. Nobody surveyed for this — it is
+            the by-product of investigating incidents, drawn where they clustered. */}
+        {deadZones.map((z) => {
+          const [x1, y1] = project(z.latitude + z.span / 2, z.longitude - z.span / 2);
+          const [x2, y2] = project(z.latitude - z.span / 2, z.longitude + z.span / 2);
+          const w = Math.max(Math.abs(x2 - x1), 26);
+          const h = Math.max(Math.abs(y2 - y1), 26);
+          return (
+            <g key={`dz-${z.latitude}-${z.longitude}`}>
+              <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={w} height={h}
+                    fill="url(#deadzone)" stroke="#5aa9e6" strokeWidth="1"
+                    strokeDasharray="4 3" opacity="0.85" rx="3" />
+              <text x={Math.min(x1, x2) + w / 2} y={Math.min(y1, y2) - 5} textAnchor="middle"
+                    fill="#5aa9e6" fontSize="9.5" fontFamily="Barlow Condensed, sans-serif"
+                    letterSpacing="1.1">
+                DEAD ZONE · {z.incidents}
+              </text>
+            </g>
+          );
+        })}
 
         {/* Site working areas */}
         {zones.map((z) => (
@@ -241,6 +268,12 @@ export function FleetMap({ assets, technicians, workOrders, selectedId, onSelect
       </svg>
 
       <div className="map-legend">
+        {deadZones.length > 0 && (
+          <span>
+            <i style={{ background: "#5aa9e6", opacity: 0.5 }} />
+            learned dead zone
+          </span>
+        )}
         {Object.entries(STATE_COLOR).map(([k, v]) => (
           <span key={k}>
             <i style={{ background: v }} />

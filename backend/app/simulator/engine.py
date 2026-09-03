@@ -135,6 +135,7 @@ class SimulatorEngine:
                     ground_truth="NORMAL",
                 )
                 store.record_telemetry(sample)
+            store.advance_work_orders()
             store.publish_kpis()
             await asyncio.sleep(settings.sim_tick_seconds)
 

@@ -26,6 +26,13 @@ from .models import (
 from .seed import build_demo_fleet, build_technicians
 
 
+def _dead_zones() -> list[dict]:
+    # Imported lazily: memory lives in the agent package, which imports the store.
+    from .agent.memory import memory
+
+    return memory.dead_zones()
+
+
 # A public deployment runs for days with nobody pressing reset, and every incident
 # carries a trace. Keeping the most recent slice bounds memory without affecting
 # anything a viewer can see — the dashboard only ever shows recent activity.
@@ -135,6 +142,32 @@ class Store:
                 tech.available = False
         bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
 
+    def advance_work_orders(self) -> None:
+        """Let dispatched jobs finish.
+
+        A fleet that only ever loses technicians is not a fleet. Completing jobs frees
+        the crew, returns the machine to service, and lets the demo run indefinitely
+        instead of degrading into work orders with nobody assigned.
+        """
+        from .config import get_settings
+
+        after = get_settings().work_order_complete_seconds
+        now = utcnow()
+        for wo in self.work_orders.values():
+            if wo.status == "completed":
+                continue
+            if (now - wo.created_at).total_seconds() < after:
+                continue
+            wo.status = "completed"
+            if wo.technician_id:
+                tech = self.technicians.get(wo.technician_id)
+                if tech:
+                    tech.available = True
+            asset = self.assets.get(wo.asset_id)
+            if asset and asset.state == "dispatched":
+                self.set_asset_state(wo.asset_id, "healthy", last_seen=now)
+            bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
+
     def record_blindspot_avoided(self) -> None:
         self.false_dispatches_avoided += 1
 
@@ -173,6 +206,7 @@ class Store:
                 k: v.model_dump(mode="json") for k, v in self.latest_telemetry.items()
             },
             "kpis": self.kpis().model_dump(mode="json"),
+            "dead_zones": _dead_zones(),
         }
 
 

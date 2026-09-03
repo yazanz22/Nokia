@@ -94,6 +94,15 @@ export interface Kpis {
   avg_triage_seconds: number;
 }
 
+/** A patch of ground the agent has learned swallows signal. */
+export interface DeadZone {
+  latitude: number;
+  longitude: number;
+  span: number;
+  incidents: number;
+  last_seen: string;
+}
+
 export type WsEventType =
   | "snapshot"
   | "telemetry"
@@ -101,7 +110,8 @@ export type WsEventType =
   | "incident_update"
   | "trace_step"
   | "work_order"
-  | "kpis";
+  | "kpis"
+  | "dead_zones";
 
 export interface WsEvent {
   type: WsEventType;

@@ -76,6 +76,13 @@ class AgentMemory:
             if len(bucket) > MAX_PER_KEY:
                 del bucket[:-MAX_PER_KEY]
 
+        # Learning where the ground is bad is only useful if the operator sees it.
+        if category in ("network_blindspot", "roaming_blocked"):
+            from ..events import bus
+            from ..models import WsEvent
+
+            bus.publish(WsEvent(type="dead_zones", payload={"zones": self.dead_zones()}))
+
     def recall(self, asset_id: str, lat: float, lon: float) -> Recollection:
         cell = _cell(lat, lon)
         mine = self._by_asset.get(asset_id, [])
@@ -114,6 +121,30 @@ class AgentMemory:
             parts.append(f"{asset_id} has {len(mine)} prior incident(s) on record.")
         r.summary = " ".join(parts)
         return r
+
+    def dead_zones(self) -> list[dict]:
+        """Cells the agent has learned swallow signal, as map-drawable areas.
+
+        This is the loop closing: the agent discovers dead ground by investigating,
+        and the operator gets to see it. A coverage map nobody had to survey for.
+        """
+        out = []
+        for cell, eps in self._by_cell.items():
+            coverage = [e for e in eps if e.category in ("network_blindspot", "roaming_blocked")]
+            if len(coverage) < KNOWN_DEAD_ZONE:
+                continue
+            lat_i, lon_i = cell
+            out.append(
+                {
+                    # Cell centre, and the span so the map can draw the actual area.
+                    "latitude": (lat_i + 0.5) * CELL,
+                    "longitude": (lon_i + 0.5) * CELL,
+                    "span": CELL,
+                    "incidents": len(coverage),
+                    "last_seen": max(e.at for e in coverage).isoformat(),
+                }
+            )
+        return sorted(out, key=lambda z: -z["incidents"])
 
     @property
     def size(self) -> int:
