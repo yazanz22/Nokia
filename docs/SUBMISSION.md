@@ -44,11 +44,30 @@ The moment a heartbeat stops, the agent opens an incident and investigates on it
    it weighs serving-cell signal strength and neighbour-cell failures to tell them
    apart. A device that is unreachable but had a strong radio link with no neighbour
    failures is a machine that died, not a network that dropped it.
-3. Coverage gap: it logs a blind spot, schedules a re-check, notifies the operator,
-   and dispatches nobody.
-4. Genuine fault: an ML model classifies it, CAMARA Location Retrieval supplies
-   network-verified coordinates for a device whose own GPS is dark, and the agent
-   raises a work order routed to the nearest technician already carrying the part.
+3. It also calls CAMARA Device Roaming Status, because reachability alone cannot see
+   the third case: a machine that is healthy and attached, but attached to somebody
+   else. NEOM sits kilometres from Egyptian and Jordanian networks, so an asset
+   working the site boundary can hand off to a foreign operator — at which point its
+   telemetry APN stops routing to us while every on-board sensor reads normal. This
+   is invisible to the device and invisible to reachability; only the operator's
+   roaming view reveals it, and the correct response is a connectivity ticket.
+4. Five outcomes follow, and only one sends a person: coverage gap, roamed out,
+   transient dropout, sensor fault (a low-cost sensor kit), or a genuine hardware
+   fault.
+5. On a genuine fault: a diagnostic model classifies it and a component model names
+   the failing part — hydraulic pump, cooling system, main bearing or alternator, at
+   88.3% accuracy. CAMARA Location Retrieval then supplies network-verified
+   coordinates for a device whose own GPS is dark.
+6. Location Retrieval is called a second time, on the technicians' phones. Their
+   handsets are devices on the same network, so the same API answers who is genuinely
+   nearest right now rather than who the roster listed this morning. The work order
+   routes to the nearest technician actually carrying that part — and records, in
+   plain language, when a closer technician was passed over for not carrying it.
+
+So the agent orchestrates two CAMARA API families across three distinct network
+signals — Device Reachability Status, Device Roaming Status, Location Retrieval — and
+makes four network calls per hardware incident, deciding for itself which to make and
+in what order.
 
 Alongside this, a forecasting model scores the whole fleet continuously for machines
 heading toward failure. Bearing wear lifts vibration and oil-particle count days
