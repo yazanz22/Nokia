@@ -126,7 +126,11 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
     return { km, px: km * pxPerKm };
   }, [project]);
 
-  const activeWOs = workOrders.filter((w) => w.technician_id);
+  // A finished job is not a journey. Without the status check the route kept
+  // animating after the repair closed — and because completing a job frees the
+  // technician back into the drifting pool, the line followed them around the site
+  // still pointing at a machine that was already fixed.
+  const activeWOs = workOrders.filter((w) => w.technician_id && w.status !== "completed");
 
   return (
     <div className="map-wrap">
