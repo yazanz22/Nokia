@@ -1208,3 +1208,16 @@ button:focus-visible {
 .panel.collapsed {
   flex: 0 0 auto;
 }
+
+/* The saving sits inside the tile it belongs to — the dashboard has no room for
+   another one, and the figure means nothing detached from the count it derives from. */
+.kpi-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--ok, #78c88c);
+  opacity: 0.85;
+  margin-top: 2px;
+  white-space: nowrap;
+  cursor: help;
+}

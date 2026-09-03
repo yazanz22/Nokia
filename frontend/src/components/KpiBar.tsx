@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { Kpis } from "../types";
 
+// A dispatch that never happened is the product, but "2" is not a number anyone
+// repeats afterwards — the money is. Range rather than a point estimate, because
+// the source gives a range: $250–$600 per truck roll, "in some cases as high as
+// $1,000" (see docs/EVIDENCE.md). Shown as an illustrative rate, not a measurement.
+const TRUCK_ROLL_LOW = 250;
+const TRUCK_ROLL_HIGH = 1000;
+
+function money(n: number): string {
+  return n >= 1000 ? `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k` : `$${n}`;
+}
+
 /** Counts up to a new value so a change reads as an event, not a redraw. */
 function useCountUp(target: number, ms = 550): number {
   const [v, setV] = useState(target);
@@ -46,6 +57,14 @@ export function KpiBar({ kpis }: { kpis: Kpis | null }) {
         value={Math.round(avoided).toString()}
         label="False dispatches avoided"
         tone={k.false_dispatches_avoided > 0 ? "ok" : "idle"}
+        note={
+          k.false_dispatches_avoided > 0
+            ? `${money(k.false_dispatches_avoided * TRUCK_ROLL_LOW)}–${money(
+                k.false_dispatches_avoided * TRUCK_ROLL_HIGH
+              )} not spent`
+            : undefined
+        }
+        noteTitle="Illustrative: $250–$1,000 per truck roll (docs/EVIDENCE.md). Not a measured saving."
       />
       <Kpi
         hero
@@ -75,12 +94,16 @@ function Kpi({
   tone,
   hero,
   rail,
+  note,
+  noteTitle,
 }: {
   value: string;
   label: string;
   tone?: "ok" | "hv" | "warn" | "idle";
   hero?: boolean;
   rail?: string;
+  note?: string;
+  noteTitle?: string;
 }) {
   return (
     <div
@@ -89,6 +112,11 @@ function Kpi({
     >
       <div className={`v ${tone ?? ""}`}>{value}</div>
       <div className="l">{label}</div>
+      {note && (
+        <div className="kpi-note" title={noteTitle}>
+          {note}
+        </div>
+      )}
     </div>
   );
 }
