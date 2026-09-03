@@ -26,6 +26,26 @@ editing the other — that's what keeps the halves looking like one deck.
 - Deck A card 8 must name **all three** signals. Gamma likes to compress it back to two
   (reachability + location) and drop roaming — which is the one signal nothing else can see, and
   the evidence card 7's roaming row depends on.
+- **Theme match is not automatic — confirmed by an actual combine on 2026-09-03.** Two separate
+  generations produced two visually unrelated decks (a light minimal sans-serif for A, a bold
+  black condensed display face for B) even from the same style block. Picking the same theme by
+  name in step 3 is not optional polish; skip it and the combined deck reads as two decks
+  stapled together.
+- **Gamma invents specific factual claims when a card has room, not just numbers — confirmed.**
+  On the impact card it added "NEOM and Masdar City are required to report Scope 3 emissions on
+  major projects" — a specific regulatory claim with no source anywhere in this prompt or in
+  `docs/EVIDENCE.md`. It also turned "94% vs 2%" into a new headline stat, "47× more impending
+  failures," by computing the ratio itself. Read every card's added sentences, not just its
+  numbers, against the source content — a plausible-sounding claim that was never given is a
+  fabrication regardless of whether a number changed.
+- On a diagram slide, check reading order against the slide's own caption, not just left-to-right/
+  top-to-bottom by default. A pyramid is conventionally read foundation-at-base — Layer 1 wide at
+  the bottom, Layer 4 narrow at the top is *correct*, not backwards. A numbered step sequence is
+  not: if the caption says "from X to Y," X must be first in reading order. Confirmed both patterns
+  in the same deck — the architecture pyramid had the right layer order but mismatched badge
+  numbers (badge "1" sitting on "Layer 4"); the decision-loop flow had correctly-numbered steps
+  running in the wrong order for its own caption ("From heartbeat loss to verdict" reading
+  Verdict-first).
 
 Every figure below traces to `docs/EVIDENCE.md` or `ml/metrics.json`.
 
