@@ -25,6 +25,14 @@ WEAK_SIGNAL_DBM = -105.0
 # on this site rather than a hypothetical.
 HOME_COUNTRY = "SA"
 
+# CAMARA Congestion Insights grades the serving area, not the device — which makes it
+# the one piece of coverage evidence that still arrives when the device is dark. It is
+# the fallback, never the override: where the radio metrics exist they are specific to
+# this device at the moment it went quiet, and a congested area is only ever a
+# statement about the neighbourhood.
+CONGESTION_BLAMES_NETWORK = {"High"}
+CONGESTION_CLEARS_NETWORK = {"None", "Low"}
+
 
 async def check_device_status(asset_id: str) -> Reachability:
     return await get_network_client().get_reachability(asset_id)
@@ -98,6 +106,35 @@ def assess_silence(reach: Reachability) -> SilenceVerdict:
                 "the equipment itself."
             ),
         )
+
+    # No radio metrics. This is the normal case against a real operator: CAMARA Device
+    # Status reports attachment and says nothing about signal, so without a second
+    # source every coverage gap would present as a possible breakdown and get someone
+    # sent. Congestion Insights is that second source.
+    if sig is None and reach.congestion_level:
+        conf = reach.congestion_confidence
+        conf_text = f" at {conf}% confidence" if conf is not None else ""
+        if reach.congestion_level in CONGESTION_BLAMES_NETWORK:
+            return SilenceVerdict(
+                dispatch=False,
+                category="coverage_gap",
+                explanation=(
+                    f"No radio metrics from Device Status, but the operator reports "
+                    f"{reach.congestion_level.lower()} congestion in this serving area"
+                    f"{conf_text}. The device went quiet into a network that is already "
+                    "struggling here — that is a coverage failure, not a breakdown."
+                ),
+            )
+        if reach.congestion_level in CONGESTION_CLEARS_NETWORK:
+            return SilenceVerdict(
+                dispatch=True,
+                category="hardware",
+                explanation=(
+                    f"The operator reports {reach.congestion_level.lower()} congestion in this "
+                    f"serving area{conf_text}, so the network here is healthy. The device is "
+                    "unreachable anyway — the silence is the equipment."
+                ),
+            )
 
     # Ambiguous — lean toward investigating hardware (a wasted check beats a missed breakdown).
     return SilenceVerdict(

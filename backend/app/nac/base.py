@@ -23,6 +23,8 @@ from pydantic import BaseModel
 from ..models import utcnow
 
 ReachStatus = Literal["CONNECTED_DATA", "CONNECTED_SMS", "NOT_CONNECTED", "UNKNOWN"]
+# CAMARA Congestion Insights grades the serving area rather than the device.
+CongestionLevel = Literal["None", "Low", "Medium", "High"]
 
 
 class Reachability(BaseModel):
@@ -35,6 +37,14 @@ class Reachability(BaseModel):
     # "Disconnected / Roaming Out" branch.
     roaming: bool | None = None
     country: str | None = None
+    # From CAMARA Congestion Insights. Device Status answers "is it attached" and
+    # nothing about radio conditions, so against a real operator the two fields above
+    # arrive empty and a coverage gap is indistinguishable from a dead engine. This is
+    # the network's own account of how degraded the serving area is, which is the
+    # missing half of that judgement — and unlike signal strength it does not depend
+    # on the silent device reporting anything.
+    congestion_level: CongestionLevel | None = None
+    congestion_confidence: int | None = None
     as_of: datetime
     source: Literal["live", "mock"]
 

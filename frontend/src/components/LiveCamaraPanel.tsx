@@ -6,6 +6,7 @@ interface LiveResult {
   device: string;
   device_status: { path: string; latency_ms: number; result: any };
   location_retrieval: { path: string; latency_ms: number; result: any };
+  congestion_insights?: { path: string; bundled_with: string; result: any };
 }
 
 /**
@@ -44,8 +45,8 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
 
       {!res && !err && (
         <div className="hint" style={{ marginTop: 8 }}>
-          Hits the Nokia sandbox for real — Device Reachability Status and Location Retrieval,
-          round-trip timed.
+          Hits the Nokia sandbox for real — Device Reachability Status, Device Roaming Status,
+          Congestion Insights and Location Retrieval, round-trip timed.
         </div>
       )}
 
@@ -103,6 +104,25 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
               </span>
             </div>
           </div>
+
+          {res.congestion_insights?.result?.congestion_level && (
+            <div className="live-call">
+              <div className="live-call-head">
+                <span className="badge-live">LIVE</span>
+                <span className="path">Congestion Insights v0</span>
+                <span className="lat">bundled</span>
+              </div>
+              <div className="kv">
+                <span className="k">serving area</span>
+                <span className="v">
+                  {res.congestion_insights.result.congestion_level}
+                  {res.congestion_insights.result.confidence_level != null
+                    ? ` · ${res.congestion_insights.result.confidence_level}% confidence`
+                    : ""}
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="hint">
             A real call to the Nokia sandbox. The test SIM is provisioned in Hungary — the fleet

@@ -123,12 +123,18 @@ def _build_agent():
             args={"asset_id": ctx.deps.asset_id},
             observation=(
                 f"status={reach.status}, signal={reach.signal_strength_dbm} dBm, "
-                f"neighbour_failures={reach.neighbor_fail_count}, source={reach.source}"
+                f"neighbour_failures={reach.neighbor_fail_count}, "
+                f"area_congestion={reach.congestion_level or 'n/a'}"
+                + (f" @ {reach.congestion_confidence}%"
+                   if reach.congestion_confidence is not None else "")
+                + f", source={reach.source}"
             ),
         )
         return (
             f"status={reach.status} signal_dbm={reach.signal_strength_dbm} "
-            f"neighbour_failures={reach.neighbor_fail_count}"
+            f"neighbour_failures={reach.neighbor_fail_count} "
+            f"area_congestion={reach.congestion_level or 'unavailable'} "
+            f"congestion_confidence={reach.congestion_confidence}"
         )
 
     @agent.tool

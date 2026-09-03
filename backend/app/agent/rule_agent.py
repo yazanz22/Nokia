@@ -65,7 +65,10 @@ async def run_rule_investigation(incident_id: str) -> None:
         args={"asset_id": asset_id},
         observation=(
             f"status={reach.status}, signal={reach.signal_strength_dbm} dBm, "
-            f"neighbour_failures={reach.neighbor_fail_count}, source={reach.source}"
+            f"neighbour_failures={reach.neighbor_fail_count}, "
+            f"area_congestion={reach.congestion_level or 'n/a'}"
+            + (f" @ {reach.congestion_confidence}%" if reach.congestion_confidence is not None else "")
+            + f", source={reach.source}"
         ),
     )
 

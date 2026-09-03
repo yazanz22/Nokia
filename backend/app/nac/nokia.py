@@ -44,6 +44,10 @@ REACHABILITY_PATH = "/device-status/device-reachability-status/v1/retrieve"
 CONNECTIVITY_PATH = "/device-status/v0/connectivity"  # fallback
 ROAMING_PATH = "/device-status/v0/roaming"
 LOCATION_PATH = "/location-retrieval/v0/retrieve"
+# Congestion Insights grades the serving area. Device Status exposes no radio
+# metrics, so this is the only network-side evidence that a silence is the
+# network's doing rather than the machine's.
+CONGESTION_PATH = "/congestion-insights/v0/query"
 
 
 class NokiaNaCClient:
@@ -112,6 +116,25 @@ class NokiaNaCClient:
         except Exception as exc:  # noqa: BLE001
             log.debug("roaming lookup failed for %s: %s", asset_id, exc)
 
+        # How degraded is the area serving this device? Best-effort, like roaming:
+        # a missing answer must never take down the primary reachability result.
+        congestion_level = None
+        congestion_confidence = None
+        try:
+            cg = await self._post(CONGESTION_PATH, {"device": device})
+            # A list of time windows, most recent first; the one covering "now" is
+            # what the silence has to be explained against.
+            entries = cg if isinstance(cg, list) else cg.get("congestionInsights") or []
+            if entries:
+                current = entries[0]
+                level = str(current.get("congestionLevel", "")).capitalize()
+                if level in ("None", "Low", "Medium", "High"):
+                    congestion_level = level
+                conf = current.get("confidenceLevel")
+                congestion_confidence = int(conf) if conf is not None else None
+        except Exception as exc:  # noqa: BLE001
+            log.debug("congestion lookup failed for %s: %s", asset_id, exc)
+
         return Reachability(
             asset_id=asset_id,
             status=status if status in _VALID else "UNKNOWN",
@@ -122,6 +145,8 @@ class NokiaNaCClient:
             neighbor_fail_count=None,
             roaming=roaming,
             country=country,
+            congestion_level=congestion_level,
+            congestion_confidence=congestion_confidence,
             as_of=_now(),
             source="live",
         )

@@ -52,6 +52,18 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
             "latency_ms": round(t_loc),
             "result": loc.model_dump(mode="json"),
         },
+        # Issued as part of the reachability step rather than on its own, so there is
+        # no separate round-trip to report and we do not invent one. Named here
+        # because it is a distinct CAMARA API and the panel exists to show exactly
+        # which ones this really calls.
+        "congestion_insights": {
+            "path": "/congestion-insights/v0/query",
+            "bundled_with": "device_status",
+            "result": {
+                "congestion_level": reach.congestion_level,
+                "confidence_level": reach.congestion_confidence,
+            },
+        },
     }
 
 

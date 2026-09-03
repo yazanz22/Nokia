@@ -55,12 +55,25 @@ class MockNaCClient:
                 neighbor_fail_count=0,
                 roaming=True,
                 country=self._rng.choice(["EG", "JO"]),
+                # The device is attached and the cell is fine — the problem is whose
+                # cell it is.
+                congestion_level="Low",
+                congestion_confidence=self._rng.randint(70, 95),
                 as_of=_now(),
                 source="mock",
             )
 
         row = self._row_for(asset_id)
         status = "CONNECTED_DATA" if row["reachable"] else "NOT_CONNECTED"
+        label = simulator.pending_label(asset_id)
+        # dataset1.csv has no congestion column, so the mock derives it the same way it
+        # derives roaming: from what is actually happening to the asset. A network
+        # outage is a degraded serving area; anything else leaves the area healthy,
+        # which is what exonerates the network and points at the machine.
+        if label == "NETWORK_OUTAGE":
+            congestion_level, confidence = "High", self._rng.randint(60, 90)
+        else:
+            congestion_level, confidence = "Low", self._rng.randint(70, 95)
         return Reachability(
             asset_id=asset_id,
             status=status,
@@ -68,6 +81,8 @@ class MockNaCClient:
             neighbor_fail_count=row["neighbor_fail_count"],
             roaming=False,
             country="SA",
+            congestion_level=congestion_level,
+            congestion_confidence=confidence,
             as_of=_now(),
             source="mock",
         )
