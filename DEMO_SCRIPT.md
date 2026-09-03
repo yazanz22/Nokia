@@ -333,6 +333,30 @@ that sit in Hungary and always report reachable; they can't stand in for thirty 
 desert site, and a live location lookup would route every dispatch to Budapest. Same adapter, same
 CAMARA contract, one environment variable apart. **Never claim the fleet is live.**
 
+**"Would this behave the same against the live network, or only against your mock?"**
+Mostly the same, and it is worth being precise about the one difference rather than waving at it.
+
+CAMARA Device Status answers *is this SIM attached*; Device Roaming Status answers *whose network
+is it on*. Neither returns radio metrics — no serving-cell signal strength, no neighbour-cell
+failure count. Our live adapter leaves those fields null rather than inventing a zero, and you can
+see that in `nac/nokia.py`.
+
+Four of the five outcomes are unaffected. Roaming is a genuine live call. The reachable paths —
+transient dropout, sensor fault, hardware fault — all still run, because they turn on the ML model
+rather than on the radio numbers. The one that cannot fire from live Device Status alone is the
+**blind spot**, because separating "the network dropped it" from "the machine died" is precisely
+what those two numbers do.
+
+In production they do not come from CAMARA at all — they come from the machine. A device reports
+its own signal conditions in the last telemetry frame it sends *before* it goes dark, which is the
+same frame we already classify on; in our dataset they are explicit columns for exactly that
+reason. So the production wiring is: radio conditions from the last transmitted frame, attachment
+and roaming from the operator. CAMARA supplies the half the machine cannot — whether the network
+can still see it. That split is the architecture, not a workaround.
+
+If you wanted it fully network-side, Congestion Insights on the same Nokia platform is the natural
+addition. That is roadmap, not something we claim today.
+
 **"Which part of this is the AI agent, exactly?"**
 The orchestration. The agent decides *whether* to call Device Status, *how to weigh* conflicting
 signals — unreachable but strong signal is the hard case — *whether* the ML model is even relevant,
