@@ -140,10 +140,58 @@ class Store:
             tech = self.technicians.get(wo.technician_id)
             if tech:
                 tech.available = False
+                self.publish_technicians()
         bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
 
+    def complete_work_order(self, wo: WorkOrder) -> None:
+        """Finish a job: free the crew, put the machine back into service.
+
+        The repair is what ends the scenario. Until the simulator is told the asset is
+        fixed it keeps withholding telemetry, so ``last_seen`` never advances and the
+        detector opens a fresh incident on a machine we just repaired — an endless
+        dispatch loop on an idle dashboard.
+        """
+        from .simulator import simulator
+
+        if wo.status == "completed":
+            return
+        wo.status = "completed"
+        if wo.technician_id:
+            tech = self.technicians.get(wo.technician_id)
+            if tech:
+                tech.available = True
+                self.publish_technicians()
+        # Repaired: the heartbeat resumes.
+        simulator.clear(wo.asset_id)
+        asset = self.assets.get(wo.asset_id)
+        if asset and asset.state in ("dispatched", "silent", "anomaly"):
+            self.set_asset_state(wo.asset_id, "healthy", last_seen=utcnow())
+        bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
+
+    def delete_work_order(self, wo: WorkOrder) -> None:
+        """Drop a job entirely.
+
+        Cancelling still releases the technician and the machine — an operator who
+        dismisses a work order has decided nobody is going, not that the asset should
+        stay stuck in a dispatched state forever.
+        """
+        from .simulator import simulator
+
+        self.work_orders.pop(wo.id, None)
+        if wo.status != "completed":
+            if wo.technician_id:
+                tech = self.technicians.get(wo.technician_id)
+                if tech:
+                    tech.available = True
+                    self.publish_technicians()
+            simulator.clear(wo.asset_id)
+            asset = self.assets.get(wo.asset_id)
+            if asset and asset.state in ("dispatched", "silent", "anomaly"):
+                self.set_asset_state(wo.asset_id, "healthy", last_seen=utcnow())
+        bus.publish(WsEvent(type="work_order_deleted", payload={"id": wo.id}))
+
     def advance_work_orders(self) -> None:
-        """Let dispatched jobs finish.
+        """Let dispatched jobs finish on their own.
 
         A fleet that only ever loses technicians is not a fleet. Completing jobs frees
         the crew, returns the machine to service, and lets the demo run indefinitely
@@ -153,20 +201,12 @@ class Store:
 
         after = get_settings().work_order_complete_seconds
         now = utcnow()
-        for wo in self.work_orders.values():
+        for wo in list(self.work_orders.values()):
             if wo.status == "completed":
                 continue
             if (now - wo.created_at).total_seconds() < after:
                 continue
-            wo.status = "completed"
-            if wo.technician_id:
-                tech = self.technicians.get(wo.technician_id)
-                if tech:
-                    tech.available = True
-            asset = self.assets.get(wo.asset_id)
-            if asset and asset.state == "dispatched":
-                self.set_asset_state(wo.asset_id, "healthy", last_seen=now)
-            bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
+            self.complete_work_order(wo)
 
     def record_blindspot_avoided(self) -> None:
         self.false_dispatches_avoided += 1
@@ -193,6 +233,20 @@ class Store:
 
     def publish_kpis(self) -> None:
         bus.publish(WsEvent(type="kpis", payload=self.kpis().model_dump(mode="json")))
+
+    def publish_technicians(self) -> None:
+        """Crews move and go on and off shift; the map has to see it.
+
+        Without this the dashboard only ever knows where the crew were when it
+        connected, which makes the network-located dispatch look like it picked
+        someone at random.
+        """
+        bus.publish(
+            WsEvent(
+                type="technicians",
+                payload={"technicians": [t.model_dump(mode="json") for t in self.technicians.values()]},
+            )
+        )
 
     # ── snapshot for a freshly-connected dashboard ───────────────────────
     def snapshot(self) -> dict:

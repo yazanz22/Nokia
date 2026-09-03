@@ -102,6 +102,18 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
       const w = ev.payload as WorkOrder;
       return { ...state, workOrders: { ...state.workOrders, [w.id]: w } };
     }
+    case "work_order_deleted": {
+      const id = (ev.payload as { id: string }).id;
+      const { [id]: _dropped, ...rest } = state.workOrders;
+      return { ...state, workOrders: rest };
+    }
+    case "technicians": {
+      // Crews move between jobs and go on and off shift. Without this the map keeps
+      // showing wherever they were when the dashboard connected.
+      const technicians: Record<string, Technician> = {};
+      for (const t of (ev.payload?.technicians ?? []) as Technician[]) technicians[t.id] = t;
+      return { ...state, technicians };
+    }
     case "kpis":
       return { ...state, kpis: ev.payload as Kpis };
     case "dead_zones":

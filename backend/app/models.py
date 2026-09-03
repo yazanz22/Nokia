@@ -172,6 +172,8 @@ EventType = Literal[
     "incident_update",
     "trace_step",
     "work_order",
+    "work_order_deleted",
+    "technicians",
     "kpis",
     "dead_zones",
 ]

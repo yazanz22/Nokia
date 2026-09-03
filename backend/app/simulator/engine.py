@@ -141,6 +141,7 @@ class SimulatorEngine:
                 if tech.available:
                     tech.latitude += self._rng.uniform(-0.0015, 0.0015)
                     tech.longitude += self._rng.uniform(-0.0015, 0.0015)
+            store.publish_technicians()
             store.advance_work_orders()
             store.publish_kpis()
             await asyncio.sleep(settings.sim_tick_seconds)
