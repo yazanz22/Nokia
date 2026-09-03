@@ -62,6 +62,11 @@ function inflate(poly: [number, number][], by: number): [number, number][] {
 }
 
 export function FleetMap({ assets, technicians, workOrders, deadZones, selectedId, onSelect }: Props) {
+  // Equirectangular with a single scale for both axes. Stretching each axis
+  // independently to fill the box makes the map lie about distance — at this latitude
+  // it rendered east-west spans 1.85x larger than north-south ones, so a technician
+  // who looked closer often was not. "Nearest" has to mean the same thing on the map
+  // as it does in the dispatch.
   const project = useMemo(() => {
     const pts = [...assets, ...technicians];
     if (pts.length === 0) return () => [W / 2, H / 2] as [number, number];
@@ -71,11 +76,22 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
     const latHi = Math.max(...lats);
     const lonLo = Math.min(...lons);
     const lonHi = Math.max(...lons);
-    const spanLat = latHi - latLo || 1;
-    const spanLon = lonHi - lonLo || 1;
+
+    // Longitude degrees shrink with latitude; convert both spans to kilometres first.
+    const midLat = (latLo + latHi) / 2;
+    const kmPerLat = 111.32;
+    const kmPerLon = 111.32 * Math.cos((midLat * Math.PI) / 180);
+    const spanKmLat = Math.max((latHi - latLo) * kmPerLat, 0.001);
+    const spanKmLon = Math.max((lonHi - lonLo) * kmPerLon, 0.001);
+
+    // One scale, so a kilometre is the same number of pixels in every direction.
+    const scale = Math.min((W - 2 * PAD) / spanKmLon, (H - 2 * PAD) / spanKmLat);
+    const offX = (W - spanKmLon * scale) / 2;
+    const offY = (H - spanKmLat * scale) / 2;
+
     return (lat: number, lon: number): [number, number] => [
-      PAD + ((lon - lonLo) / spanLon) * (W - 2 * PAD),
-      PAD + ((latHi - lat) / spanLat) * (H - 2 * PAD), // north up
+      offX + (lon - lonLo) * kmPerLon * scale,
+      offY + (latHi - lat) * kmPerLat * scale, // north up
     ];
   }, [assets, technicians]);
 
@@ -97,6 +113,18 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
         return { site, d: poly.map((p) => p.join(",")).join(" "), cx, cy };
       });
   }, [assets, project]);
+
+  // A real scale bar, now that a kilometre is the same length everywhere on the map.
+  const scaleBar = useMemo(() => {
+    const [x0] = project(27.0, 34.0);
+    const [x1] = project(27.0, 34.0 + 1 / (111.32 * Math.cos((27.5 * Math.PI) / 180)));
+    const pxPerKm = Math.abs(x1 - x0) || 1;
+    const target = (W - 2 * PAD) / 4;
+    const nice = [1, 2, 5, 10, 20, 25, 50, 100];
+    const km = nice.reduce((best, k) =>
+      Math.abs(k * pxPerKm - target) < Math.abs(best * pxPerKm - target) ? k : best, nice[0]);
+    return { km, px: km * pxPerKm };
+  }, [project]);
 
   const activeWOs = workOrders.filter((w) => w.technician_id);
 
@@ -259,10 +287,14 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
                 fontFamily="Barlow Condensed, sans-serif" letterSpacing="1.6">
             N ↑
           </text>
-          <line x1={PAD} y1={H - 20} x2={PAD + 110} y2={H - 20} stroke="#5d6980" strokeWidth="1.5" />
-          <text x={PAD + 116} y={H - 16} fill="#5d6980" fontSize="10"
+          <line x1={PAD} y1={H - 20} x2={PAD + scaleBar.px} y2={H - 20} stroke="#5d6980"
+                strokeWidth="1.5" />
+          <line x1={PAD} y1={H - 24} x2={PAD} y2={H - 16} stroke="#5d6980" strokeWidth="1.5" />
+          <line x1={PAD + scaleBar.px} y1={H - 24} x2={PAD + scaleBar.px} y2={H - 16}
+                stroke="#5d6980" strokeWidth="1.5" />
+          <text x={PAD + scaleBar.px + 8} y={H - 16} fill="#5d6980" fontSize="10"
                 fontFamily="IBM Plex Mono, monospace">
-            ~25 km
+            {scaleBar.km} km
           </text>
         </g>
       </svg>

@@ -137,6 +137,10 @@ class WorkOrder(BaseModel):
     technician_name: str = ""
     # Whether the crew position that produced this assignment was network-verified.
     technician_located_via: str = "seed"
+    # A closer technician who was passed over for not carrying the part. Recorded so
+    # the assignment can explain itself rather than looking arbitrary on a map.
+    nearest_skipped_name: str = ""
+    nearest_skipped_km: float = 0.0
     distance_km: float = 0.0
     eta_minutes: int = 0
 

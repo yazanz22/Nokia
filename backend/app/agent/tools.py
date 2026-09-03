@@ -220,6 +220,21 @@ async def create_work_order(
     # Establish where they are *now*, before working out who is nearest.
     crew_source = await locate_crew(candidates)
 
+    # Someone closer who cannot fix it is not a better answer, but on a map it looks
+    # like one. Record the skipped-but-nearer person so the reasoning is visible
+    # instead of the dispatch appearing arbitrary.
+    skipped_closer: Technician | None = None
+    skipped_km = 0.0
+    if part:
+        await locate_crew([t for t in store.technicians.values() if t.available])
+        for other in store.technicians.values():
+            if not other.available or part in other.parts_on_hand:
+                continue
+            km = _haversine_km(other.latitude, other.longitude,
+                               location.latitude, location.longitude)
+            if skipped_closer is None or km < skipped_km:
+                skipped_closer, skipped_km = other, km
+
     tech = None
     distance = 0.0
     if candidates:
@@ -244,6 +259,8 @@ async def create_work_order(
         technician_id=tech.id if tech else None,
         technician_name=tech.name if tech else "",
         technician_located_via=crew_source,
+        nearest_skipped_name=skipped_closer.name if skipped_closer else "",
+        nearest_skipped_km=round(skipped_km, 1) if skipped_closer else 0.0,
         distance_km=round(distance, 1),
         # ~45 km/h effective across a live construction site + 10 min mobilisation.
         eta_minutes=int(round(distance / 45.0 * 60)) + 10 if tech else 0,

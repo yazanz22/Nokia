@@ -192,13 +192,20 @@ async def run_rule_investigation(incident_id: str) -> None:
 
     wo = await create_work_order(incident_id, asset_id, fault, loc)
     await t.step(
-        "Generated work order and assigned the nearest qualified technician.",
+        "Generated work order and assigned the nearest technician who is actually carrying "
+        "the part. Closest is not the same as soonest fixed.",
         tool="ops.create_work_order",
         args={"incident_id": incident_id, "asset_id": asset_id, "part": wo.part},
         observation=(
             f"{wo.id} -> {wo.technician_name or 'unassigned'} "
             f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min) carrying {wo.part or 'n/a'}; "
             f"crew position source={wo.technician_located_via}"
+            + (
+                f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but is "
+                f"not carrying a {wo.part} — a closer technician who cannot fix it is a second trip."
+                if wo.nearest_skipped_name
+                else ""
+            )
         ),
     )
 

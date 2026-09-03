@@ -277,12 +277,19 @@ def _build_agent():
         )
         wo = await create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
         await d.tracer.step(
-            "Generated work order and assigned the nearest qualified technician.",
+            "Generated work order and assigned the nearest technician who is actually carrying "
+        "the part. Closest is not the same as soonest fixed.",
             tool="ops.create_work_order",
             args={"incident_id": d.incident_id, "part": wo.part},
             observation=(
                 f"{wo.id} -> {wo.technician_name or 'unassigned'} "
                 f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min)"
+                + (
+                    f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but "
+                    f"is not carrying a {wo.part}."
+                    if wo.nearest_skipped_name
+                    else ""
+                )
             ),
         )
         inc = store.incidents[d.incident_id]

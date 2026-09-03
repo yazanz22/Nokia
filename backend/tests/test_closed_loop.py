@@ -179,6 +179,28 @@ async def test_crew_positions_come_from_the_network():
 
 
 @pytest.mark.asyncio
+async def test_dispatch_explains_skipping_a_nearer_technician():
+    """Closest is not the same as soonest fixed, and the dashboard has to say so.
+
+    Sending someone further away looks like a routing bug to anyone reading the map —
+    it was reported as one. The work order now records who was nearer and why they
+    were passed over, so the choice defends itself.
+    """
+    asset_id, inc = await _investigate("hardware")
+    wo = [w for w in store.work_orders.values() if w.incident_id == inc.id][0]
+    assert wo.part
+    assigned = store.technicians[wo.technician_id]
+    assert wo.part in assigned.parts_on_hand
+
+    # If anyone nearer was skipped, it can only have been for the part.
+    if wo.nearest_skipped_name:
+        skipped = next(t for t in store.technicians.values()
+                       if t.name == wo.nearest_skipped_name)
+        assert wo.part not in skipped.parts_on_hand
+        assert wo.nearest_skipped_km < wo.distance_km
+
+
+@pytest.mark.asyncio
 async def test_trace_is_recorded():
     _, inc = await _investigate("hardware")
     steps = store.trace[inc.id]

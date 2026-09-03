@@ -84,6 +84,8 @@ export interface WorkOrder {
   distance_km: number;
   eta_minutes: number;
   technician_located_via: string;
+  nearest_skipped_name: string;
+  nearest_skipped_km: number;
 }
 
 export interface Kpis {
