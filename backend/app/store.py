@@ -111,6 +111,15 @@ class Store:
         bus.publish(WsEvent(type="incident_update", payload=inc.model_dump(mode="json")))
 
     def close_incident(self, inc: Incident, status: str, resolution: str) -> None:
+        # An incident closes once. Two terminal tool calls from a single model turn
+        # (Pydantic AI runs them in parallel) would otherwise overwrite the resolution,
+        # append a second triage sample — dragging the average MTTR the dashboard shows
+        # toward whichever run finished second — and re-publish the incident, so the
+        # operator watches one machine get resolved twice. The callers guard themselves
+        # too, but this makes "closed once" a property of the store rather than
+        # something every caller has to remember.
+        if inc.closed_at is not None:
+            return
         inc.status = status  # type: ignore[assignment]
         inc.resolution = resolution
         inc.closed_at = utcnow()

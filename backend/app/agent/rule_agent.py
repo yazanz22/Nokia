@@ -4,11 +4,17 @@ This is the reference behaviour the LLM agent must reproduce. No model call — 
 always completes, which makes it the on-stage failsafe (``AGENT_MODE=rule``).
 
     silent heartbeat
-      -> CAMARA Device Status
-        -> coverage gap  : notify + schedule re-check, NO dispatch
-        -> network fine  : ML fault prediction
-                           -> CAMARA Location Retrieval
-                           -> work order + nearest technician
+      -> CAMARA Device Status + Roaming + Congestion Insights
+        -> roaming abroad : connectivity ticket, NO dispatch
+        -> coverage gap   : notify + schedule re-check, NO dispatch
+        -> network fine   : ML fault prediction
+             -> NETWORK_OUTAGE : the model blames the network too, NO dispatch
+             -> NORMAL         : transient dropout, resume telemetry, NO dispatch
+             -> a real fault   : CAMARA Location Retrieval (asset, then crew)
+                                 -> work order + nearest technician carrying the part
+
+Five outcomes. Three send nobody; a sensor fault sends a cheap kit; a hardware fault
+sends a mechanic with the component the machine's own history points at.
 """
 
 from __future__ import annotations

@@ -234,6 +234,85 @@ async def test_guards_hold_without_the_model_ever_checking_device_status(monkeyp
     assert inc.status == "network_blindspot"
 
 
+# ── One incident, one resolution ─────────────────────────────────────────────
+
+
+async def test_two_terminal_calls_in_one_turn_resolve_the_incident_once(monkeypatch):
+    """A model can emit both terminal calls in a single response — and Pydantic AI's
+    default `end_strategy='graceful'` runs the function tools of one response in
+    parallel, so both land.
+
+    Before the claim guard that meant two resolutions over one incident: a work order for
+    a machine already written off as a coverage gap, `false_dispatches_avoided` and the
+    triage average both counted twice, and the operator watching one asset get resolved
+    twice on the dashboard. The second call has to be turned away having touched nothing.
+    """
+    calls = [
+        ToolCallPart(tool_name="resolve_as_blindspot", args={"reason": "dead zone"}),
+        ToolCallPart(tool_name="dispatch_technician", args={}),
+    ]
+    sent = False
+
+    def fn(messages, info) -> ModelResponse:
+        nonlocal sent
+        if sent:
+            return ModelResponse(parts=[TextPart("done")])
+        sent = True
+        return ModelResponse(parts=list(calls))
+
+    async def fixed_status(asset_id: str) -> Reachability:
+        return _reach(**COVERAGE_GAP)
+
+    monkeypatch.setattr(agent_mod, "check_device_status", fixed_status)
+
+    asset_id = sorted(store.assets)[0]
+    inc = store.open_incident(asset_id, "test")
+    store.set_asset_state(asset_id, "silent")
+    avoided_before = store.false_dispatches_avoided
+    samples_before = len(store._triage_durations)
+
+    agent = _build_agent()
+    deps = Deps(incident_id=inc.id, asset_id=asset_id, tracer=Tracer(inc.id))
+    with agent.override(model=FunctionModel(fn)):
+        result = await agent.run("Investigate.", deps=deps)
+
+    returns = _tool_returns(result)
+    inc = store.incidents[inc.id]
+    assert inc.status == "network_blindspot"
+    assert deps.terminal == "blindspot"
+    # Deliberately not asserting *which* call wins — they run concurrently and either
+    # order is correct (dispatch re-routes a coverage gap to the blind-spot path anyway).
+    # What must hold is that exactly one of them acted, and the loser said so out loud
+    # rather than failing silently, so a model that does this is told why.
+    losers = [name for name, text in returns.items() if "already resolved" in text]
+    assert len(losers) == 1, returns
+    assert _work_orders_for(inc.id) == []
+    # The KPIs the deck quotes move exactly once.
+    assert store.false_dispatches_avoided == avoided_before + 1
+    assert len(store._triage_durations) == samples_before + 1
+
+
+def test_closing_an_incident_twice_is_a_no_op():
+    """The same invariant one layer down, where no caller can forget it.
+
+    `close_incident` used to append a triage sample and re-publish every time it was
+    called, so a second close dragged the average MTTR on the dashboard toward whichever
+    resolution happened to land second — and overwrote the real resolution text with it.
+    """
+    asset_id = sorted(store.assets)[0]
+    inc = store.open_incident(asset_id, "test")
+    samples_before = len(store._triage_durations)
+
+    store.close_incident(inc, status="network_blindspot", resolution="first")
+    closed_at = inc.closed_at
+    store.close_incident(inc, status="hardware_confirmed", resolution="second")
+
+    assert inc.status == "network_blindspot"
+    assert inc.resolution == "first"
+    assert inc.closed_at == closed_at
+    assert len(store._triage_durations) == samples_before + 1
+
+
 # ── The re-ask path and the rule fallback ────────────────────────────────────
 
 

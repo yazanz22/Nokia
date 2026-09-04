@@ -1,16 +1,26 @@
 """Network-as-Code adapter contract.
 
-Two CAMARA-aligned signals power the agent's network-verify step:
+Four CAMARA API families power the agent's network-verify step:
 
 * **Device Status** (reachability / connectivity) — is the SIM attached to the network?
+* **Device Roaming Status** — is it attached to somebody else's network?
+* **Congestion Insights** — how is the serving *area* behaving?
 * **Location Retrieval** — network-verified coordinates for a silent device.
 
-We also surface ``signal_strength_dbm`` and ``neighbor_fail_count`` alongside
-reachability. In the Nokia sandbox these come from the connectivity-insights
-payload; in the dataset they are explicit columns. They matter because
-``reachable == False`` is ambiguous on its own — a dead engine and a coverage
-hole both look "disconnected" — and the agent needs the extra signal to tell
-them apart.
+(**Geofencing Subscriptions** is the fifth endpoint and the only one that pushes; it
+watches the perimeter rather than answering a question about a silent machine, so it
+runs alongside this contract rather than inside it.)
+
+``reachable == False`` is ambiguous on its own — a dead engine and a coverage hole both
+look "disconnected" — so the extra signals are what tell them apart.
+
+``signal_strength_dbm`` and ``neighbor_fail_count`` are the sharpest of those, and they
+are the ones a real operator does *not* give us: the dataset carries them as explicit
+columns, and the live client leaves both ``None``. That gap is why Congestion Insights
+is here. It grades the serving area rather than the device, so it still answers when the
+device is dark — the fallback that keeps the coverage-gap verdict reachable outside the
+mock. Where the radio metrics do exist they win, because they describe this device at
+the moment it went quiet while congestion only describes the neighbourhood.
 """
 
 from __future__ import annotations

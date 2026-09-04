@@ -4,6 +4,13 @@ Deterministic and realistic: it replays real ``dataset1.csv`` rows for the asset
 If the simulator has a scenario pending for the asset, it serves a row of that
 label (NETWORK_OUTAGE / DEVICE_FAILURE / SENSOR_FAILURE); otherwise a NORMAL row.
 A small artificial latency keeps the agent trace legible on screen.
+
+Three things it synthesises rather than replays, because the dataset has no column for
+them: **roaming** (a pending ROAMING_OUT scenario becomes ``roaming=True`` on an EG or
+JO network), **congestion** for the serving area, and **geofence crossings**, which it
+derives by watching each asset cross the site perimeter between calls. The simulated
+fleet are not SIMs on anyone's network, so these are the only place those signals can
+come from — the live client answers the same contract for a device that really exists.
 """
 
 from __future__ import annotations

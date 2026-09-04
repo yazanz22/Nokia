@@ -8,6 +8,7 @@ logic here means both agent modes take *exactly* the same actions.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
@@ -223,8 +224,116 @@ def predict_fault(asset_id: str, reach: Reachability | None = None) -> FaultPred
     return fault_model.predict(asset_id, sample)
 
 
+# The call sites express the re-check interval in operational minutes — 15 for a
+# coverage gap, 30 for a border-roaming ticket, which is the ratio an ops team would
+# actually choose. Nothing in a five-minute demo can wait fifteen real minutes, so the
+# nominal minutes are compressed onto a demo clock: RECHECK_AFTER_SECONDS of wall time
+# per this many nominal minutes. Same trick as WORK_ORDER_COMPLETE_SECONDS, and for the
+# same reason — a promise nobody in the room can stay to see is indistinguishable from
+# no promise at all. The ratio is preserved so a roaming ticket still waits twice as
+# long as a blind spot.
+RECHECK_NOMINAL_MINUTES = 15.0
+
+
+@dataclass
+class PendingRecheck:
+    """A re-check the agent told an operator it had queued.
+
+    This used to be nothing: ``schedule_recheck`` returned a timestamp and dropped it
+    on the floor. The trace said "re-check queued", the resolution said "Re-check at
+    14:32 UTC", the asset was parked in ``blindspot`` — a state the anomaly sweep skips
+    forever — and no re-check existed anywhere in the process. The machine stayed dark
+    until somebody hit Reset. The registry below is what makes the sentence true: the
+    detector's sweep reads it and actually goes and looks again.
+    """
+
+    asset_id: str
+    incident_id: str          # where the re-check reports back, "" if it has no incident
+    due_at: datetime
+    interval_seconds: float   # what to wait again if the network is still down
+    attempts: int = 0         # re-checks already run for this asset
+    epoch: int = 0            # store.epoch when scheduled — a reset invalidates it
+
+
+# asset_id -> the one outstanding re-check for it. One per asset: a second incident on
+# the same machine replaces the promise rather than stacking a second timer onto it.
+_pending_rechecks: dict[str, PendingRecheck] = {}
+
+
+def _incident_for(asset_id: str) -> str:
+    """The incident this re-check belongs under — its most recent one.
+
+    Both agents call ``schedule_recheck`` while the incident is still open, just before
+    closing it, so the newest incident for the asset is always the one making the
+    promise. Looked up rather than passed in because the call sites live in the two
+    agent modules and both must keep taking exactly the same action.
+    """
+    incidents = [i for i in store.incidents.values() if i.asset_id == asset_id]
+    if not incidents:
+        return ""
+    return max(incidents, key=lambda i: i.opened_at).id
+
+
 def schedule_recheck(asset_id: str, minutes: int = 15) -> datetime:
-    return utcnow() + timedelta(minutes=minutes)
+    """Queue a real re-check and return when it will run.
+
+    The returned time is what the trace and the incident resolution print, so it has to
+    be the time the detector will actually act on — otherwise the text and the behaviour
+    disagree again, only more convincingly.
+    """
+    from ..config import get_settings
+
+    interval = get_settings().recheck_after_seconds * (minutes / RECHECK_NOMINAL_MINUTES)
+    due_at = utcnow() + timedelta(seconds=interval)
+    _pending_rechecks[asset_id] = PendingRecheck(
+        asset_id=asset_id,
+        incident_id=_incident_for(asset_id),
+        due_at=due_at,
+        interval_seconds=interval,
+        epoch=store.epoch,
+    )
+    return due_at
+
+
+def reschedule_recheck(pending: PendingRecheck, *, count_attempt: bool = True) -> datetime:
+    """Wait the same interval again — the network has not come back yet.
+
+    ``count_attempt=False`` for a re-check that never got an answer at all: an API
+    timeout says nothing about the machine, and letting a flapping endpoint burn the
+    attempt budget would stand the re-check down without ever having looked.
+    """
+    if count_attempt:
+        pending.attempts += 1
+    pending.due_at = utcnow() + timedelta(seconds=pending.interval_seconds)
+    _pending_rechecks[pending.asset_id] = pending
+    return pending.due_at
+
+
+def due_rechecks(now: datetime | None = None) -> list[PendingRecheck]:
+    """Re-checks whose time has come.
+
+    Entries scheduled before a reset are dropped here rather than run. ``store.reset()``
+    is reachable without ``detector.reset()`` — the smoke script and the test fixtures
+    both do exactly that — so an epoch stamp is what stops a re-check queued against the
+    old fleet from firing at an asset in the new one.
+    """
+    now = now or utcnow()
+    stale = [a for a, p in _pending_rechecks.items() if p.epoch != store.epoch]
+    for asset_id in stale:
+        _pending_rechecks.pop(asset_id, None)
+    return [p for p in _pending_rechecks.values() if p.due_at <= now]
+
+
+def pending_recheck(asset_id: str) -> PendingRecheck | None:
+    return _pending_rechecks.get(asset_id)
+
+
+def cancel_recheck(asset_id: str) -> None:
+    _pending_rechecks.pop(asset_id, None)
+
+
+def clear_rechecks() -> None:
+    _pending_rechecks.clear()
 
 
 def notify_operator(asset_id: str, message: str) -> str:

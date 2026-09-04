@@ -87,6 +87,43 @@ def _remember(asset_id: str, category: str) -> None:
         memory.record(asset_id, asset.latitude, asset.longitude, category)
 
 
+def _already_resolved_reply(d: Deps) -> str:
+    """What a terminal tool tells the model when the incident is already closed."""
+    return (
+        f"ignored: this incident is already resolved as {d.terminal}. An incident closes "
+        "once — take no further action."
+    )
+
+
+def _claim_terminal(d: Deps, outcome: str) -> bool:
+    """Claim the incident's one terminal outcome. False means another call got there first.
+
+    `Deps.terminal` was written by all four terminal paths and read by none of them, so a
+    model that emitted two terminal calls in a single response got both: two resolutions
+    over one incident, two work orders, two `record_blindspot_avoided` bumps, and a triage
+    sample counted twice. That is not hypothetical — Pydantic AI's default
+    `end_strategy='graceful'` runs the function tools of one response *in parallel*, and an
+    open-weights model that has just talked itself through the policy will happily call
+    `resolve_as_blindspot` and `dispatch_technician` in the same breath.
+
+    Because they run in parallel, checking on entry is not enough: both calls pass an entry
+    check long before either reaches its store writes. The test-and-set here is what
+    actually decides it — it is synchronous, so the event loop cannot interleave the two
+    halves, and exactly one caller can win. Callers claim on the last line before they start
+    changing the world; the loser returns having touched nothing. The entry check stays too,
+    to spare an obviously-late call a pointless CAMARA round trip first.
+
+    Deliberately *not* claimed before a tool's refusal paths: a blind-spot call the evidence
+    rejects has resolved nothing, and must leave the incident open for the model to retry.
+    Nor before the internal re-routes (blindspot -> roaming, dispatch -> either), which run
+    while the flag is still unset and so pass straight through.
+    """
+    if d.terminal is not None:
+        return False
+    d.terminal = outcome
+    return True
+
+
 def _build_agent():
     settings = get_settings()
     agent = Agent(settings.llm_model, deps_type=Deps, system_prompt=SYSTEM_PROMPT, retries=2)
@@ -156,6 +193,8 @@ def _build_agent():
     async def resolve_as_roaming(ctx: RunContext[Deps]) -> str:
         """TERMINAL: device is on a foreign network — raise a connectivity ticket, no dispatch."""
         d = ctx.deps
+        if d.terminal is not None:
+            return _already_resolved_reply(d)
         reach = d._reach
         if reach is None:
             reach = await check_device_status(d.asset_id)
@@ -169,6 +208,10 @@ def _build_agent():
                 "refused: the device is not attached to a foreign network, so this is not a "
                 "roaming event. Reassess with assess_coverage and take the matching action."
             )
+        # Claimed here rather than on entry: past the refusal above, which resolves
+        # nothing, and before the first line that does. See `_claim_terminal`.
+        if not _claim_terminal(d, "roaming"):
+            return _already_resolved_reply(d)
         country = getattr(reach, "country", None) or "a foreign"
         recheck_at = schedule_recheck(d.asset_id, minutes=30)
         await d.tracer.step(
@@ -191,7 +234,6 @@ def _build_agent():
         )
         _remember(d.asset_id, "roaming_blocked")
         store.publish_kpis()
-        d.terminal = "roaming"
         return "resolved as roaming"
 
     @agent.tool
@@ -240,6 +282,8 @@ def _build_agent():
     async def resolve_as_blindspot(ctx: RunContext[Deps], reason: str) -> str:
         """TERMINAL: log a cellular blind spot, schedule a re-check, notify the operator, no dispatch."""
         d = ctx.deps
+        if d.terminal is not None:
+            return _already_resolved_reply(d)
         reach = d._reach
         if reach is None:
             reach = await check_device_status(d.asset_id)
@@ -256,6 +300,10 @@ def _build_agent():
                 f"refused: the network evidence does not show a coverage gap. {v.explanation} "
                 "Run predict_fault_tool and dispatch if the machine is actually broken."
             )
+        # Past both refusals and past the roaming re-route — which runs while this flag is
+        # still unset, and so is never blocked by its own caller. See `_claim_terminal`.
+        if not _claim_terminal(d, "blindspot"):
+            return _already_resolved_reply(d)
         recheck_at = schedule_recheck(d.asset_id, minutes=15)
         await d.tracer.step(
             "Logged a cellular blind spot. Re-check scheduled, operator notified, no dispatch.",
@@ -273,13 +321,14 @@ def _build_agent():
         )
         _remember(d.asset_id, "network_blindspot")
         store.publish_kpis()
-        d.terminal = "blindspot"
         return "resolved"
 
     @agent.tool
     async def dispatch_technician(ctx: RunContext[Deps]) -> str:
         """TERMINAL: create a work order for the predicted fault and route the nearest technician."""
         d = ctx.deps
+        if d.terminal is not None:
+            return _already_resolved_reply(d)
 
         # Guards, not suggestions: terminal tools own these, so no decision the model
         # makes can turn a healthy machine, a roaming one or a coverage gap into a
@@ -324,6 +373,8 @@ def _build_agent():
         # to break the tie). There is no part for a coverage gap, so a dispatch here
         # would arrive empty-handed.
         if getattr(fault, "mode", None) == "NETWORK_OUTAGE":
+            if not _claim_terminal(d, "blindspot"):
+                return _already_resolved_reply(d)
             recheck_at = schedule_recheck(d.asset_id, minutes=15)
             await d.tracer.step(
                 "The classifier reads this as the network, not the machine — and there is "
@@ -346,10 +397,11 @@ def _build_agent():
             )
             _remember(d.asset_id, "network_blindspot")
             store.publish_kpis()
-            d.terminal = "blindspot"
             return "resolved as coverage gap — dispatch withheld"
 
         if getattr(fault, "mode", None) == "NORMAL":
+            if not _claim_terminal(d, "no_fault"):
+                return _already_resolved_reply(d)
             recheck_at = schedule_recheck(d.asset_id, minutes=15)
             await d.tracer.step(
                 "The model finds nothing wrong — this reads as a transient dropout, not a "
@@ -373,47 +425,62 @@ def _build_agent():
             )
             _remember(d.asset_id, "no_fault")
             store.publish_kpis()
-            d.terminal = "no_fault"
             return "no fault found — dispatch withheld"
 
-        loc = d.__dict__.get("_loc") or await get_device_location(d.asset_id)
-        await d.tracer.step(
-            "Locating the available crew — their phones are on the same network as the "
-            "machine, so the same call finds whoever is genuinely nearest.",
-            tool="camara.location_retrieval",
-            args={"subject": "available crew"},
-            observation="crew positions refreshed from the network",
-        )
-        wo = await create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
-        await d.tracer.step(
-            "Generated work order and assigned the nearest technician who is actually carrying "
-        "the part. Closest is not the same as soonest fixed.",
-            tool="ops.create_work_order",
-            args={"incident_id": d.incident_id, "part": wo.part},
-            observation=(
-                f"{wo.id} -> {wo.technician_name or 'unassigned'} "
-                f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min)"
-                + (
-                    f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but "
-                    f"is not carrying a {wo.part}."
-                    if wo.nearest_skipped_name
-                    else ""
-                )
-            ),
-        )
-        inc = store.incidents[d.incident_id]
-        store.set_asset_state(d.asset_id, "dispatched")
-        store.close_incident(
-            inc,
-            status="hardware_confirmed",
-            resolution=(
-                f"Hardware fault confirmed (agent): {fault.mode} @ {fault.confidence:.0%}. "  # type: ignore[union-attr]
-                f"{wo.id} -> {wo.technician_name} (ETA {wo.eta_minutes} min) with {wo.part}."
-            ),
-        )
-        _remember(d.asset_id, "hardware_confirmed")
-        store.publish_kpis()
-        d.terminal = "dispatch"
+        # Claimed before the location lookup and the work order, not after: those are the
+        # expensive, externally visible half of a dispatch, and a duplicate call that got
+        # this far would raise a second work order and mark a second technician busy long
+        # before it reached the store writes below.
+        if not _claim_terminal(d, "dispatch"):
+            return _already_resolved_reply(d)
+
+        # Claiming before the work is done is what stops a duplicate, but it also means a
+        # failure below would leave the flag set with nothing created: the model's retry
+        # would be told "already resolved", `run_llm_investigation` would see a terminal
+        # and not re-ask, and the incident would sit open forever with no work order and
+        # no error on screen. So the claim is released if this half raises — the duplicate
+        # is still blocked while the work is in flight, which is the window that matters.
+        try:
+            loc = d.__dict__.get("_loc") or await get_device_location(d.asset_id)
+            await d.tracer.step(
+                "Locating the available crew — their phones are on the same network as the "
+                "machine, so the same call finds whoever is genuinely nearest.",
+                tool="camara.location_retrieval",
+                args={"subject": "available crew"},
+                observation="crew positions refreshed from the network",
+            )
+            wo = await create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
+            await d.tracer.step(
+                "Generated work order and assigned the nearest technician who is actually carrying "
+            "the part. Closest is not the same as soonest fixed.",
+                tool="ops.create_work_order",
+                args={"incident_id": d.incident_id, "part": wo.part},
+                observation=(
+                    f"{wo.id} -> {wo.technician_name or 'unassigned'} "
+                    f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min)"
+                    + (
+                        f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but "
+                        f"is not carrying a {wo.part}."
+                        if wo.nearest_skipped_name
+                        else ""
+                    )
+                ),
+            )
+            inc = store.incidents[d.incident_id]
+            store.set_asset_state(d.asset_id, "dispatched")
+            store.close_incident(
+                inc,
+                status="hardware_confirmed",
+                resolution=(
+                    f"Hardware fault confirmed (agent): {fault.mode} @ {fault.confidence:.0%}. "  # type: ignore[union-attr]
+                    f"{wo.id} -> {wo.technician_name} (ETA {wo.eta_minutes} min) with {wo.part}."
+                ),
+            )
+            _remember(d.asset_id, "hardware_confirmed")
+            store.publish_kpis()
+        except Exception:
+            d.terminal = None
+            raise
         return f"dispatched {wo.id}"
 
     return agent
@@ -438,6 +505,17 @@ async def run_llm_investigation(incident_id: str) -> None:
         f"Investigate and take the correct terminal action."
     )
     result = await agent.run(prompt, deps=deps)
+
+    # Before any of the recovery below: if the flag and the store disagree, trust the
+    # store. A terminal tool that closed the incident and then threw before claiming
+    # leaves exactly this state, and every branch under here would then push the model
+    # at an incident that is already finished — a second dispatch for a machine someone
+    # is already driving to. Same reasoning as `_already_resolved` in `agent/__init__`,
+    # applied one level in, where the re-entry is our own re-ask rather than a retry.
+    now = store.incidents.get(incident_id)
+    if deps.terminal is None and (now is None or now.closed_at is not None):
+        log.warning("not re-asking on %s — the incident is no longer open", incident_id)
+        return
 
     # Open-weight models intermittently *describe* the final tool call in prose or
     # JSON instead of invoking it — the investigation stalls one step from done,

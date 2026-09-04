@@ -119,9 +119,11 @@ https://nokia-rhhp.onrender.com/
 
 Live single-service deployment on Render — FastAPI serving the built dashboard, one
 container behind one URL. Verified working 2026-09-04: trained ML models loaded, all
-four scenario outcomes reproduce, and the "Run live CAMARA check" panel returns real
-Nokia sandbox data (Device Status, Device Roaming Status, Congestion Insights and
-Location Retrieval).
+five scenario outcomes reproduce, and the "Run live CAMARA check" panel returns real
+Nokia sandbox data across all four CAMARA families (Device Status — both reachability
+and roaming — plus Congestion Insights, Location Retrieval, and a Geofencing
+Subscriptions registration; that last one only works from the public URL, because the
+operator will not accept a callback sink it cannot reach).
 
 Two things a reviewer should know, both deliberate:
 
@@ -170,7 +172,8 @@ showing one false dispatch avoided alongside one dispatch issued.
 git archive --format=zip -o filo-asset-sentinel-src.zip HEAD
 ```
 
-About 7 MB, well inside the 50 MB cap. Excludes `node_modules`, `.venv` and `.env`.
+About 3.7 MB zipped, well inside the 50 MB cap. Excludes `node_modules`, `.venv` and
+`.env`.
 
 ---
 
@@ -227,6 +230,12 @@ DEFAULTS
       NAC_MODE=live      NAC_API_KEY=<key>
 
 TESTS
-  cd backend && .venv/Scripts/python -m pytest -q     # 13 tests
-  python scripts/scenario_smoke.py                    # headless end-to-end
+  cd backend && .venv/Scripts/python -m pytest -q     # 75 tests, no network needed
+  cd .. && backend/.venv/Scripts/python scripts/scenario_smoke.py   # headless end-to-end
+
+  The suite covers the closed loop end to end, the LLM agent path (driven by a
+  scripted model, so it runs offline with no API key), work-order lifecycle,
+  geofence perimeter events, congestion evidence, silence assessment, the ML
+  client, fleet seeding, an investigation re-entry regression, and the guards on
+  every terminal action.
 ```

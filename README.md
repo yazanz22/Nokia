@@ -12,13 +12,20 @@ drives anywhere:
 
 ```
  asset goes silent
-   └─▶ CAMARA Device Status (Nokia Network as Code)   ── is the network up here?
-         ├─ coverage gap ─▶ log blind spot, schedule re-check, notify operator   ✗ NO DISPATCH
-         └─ network fine ─▶ ML fault model  ─▶  CAMARA Location Retrieval  ─▶  work order + nearest
-                                                                                technician w/ the part
+   └─▶ CAMARA Device Status + Roaming + Congestion Insights   ── is the network up here?
+         ├─ coverage gap    ─▶ log blind spot, re-check, notify operator        ✗ NO DISPATCH
+         ├─ roaming abroad  ─▶ connectivity ticket, re-check                    ✗ NO DISPATCH
+         └─ network fine    ─▶ ML fault model
+                                ├─ nothing wrong ─▶ transient dropout, re-check ✗ NO DISPATCH
+                                └─ real fault ─▶ CAMARA Location Retrieval ─▶ work order + nearest
+                                                 (asset, then crew)             technician w/ the part
+
+ asset still healthy, but drifting off site
+   └─▶ CAMARA Geofencing Subscriptions   ── the network calls us, unprompted     ⚠ INCIDENT PREVENTED
 ```
 
-Every step of the agent's reasoning is streamed to a live operator dashboard.
+Four CAMARA API families, five network signals, and one of them pushes rather than being
+polled. Every step of the agent's reasoning is streamed to a live operator dashboard.
 
 ---
 
@@ -65,21 +72,55 @@ report:
 
 | Observation | Reading | Action |
 |---|---|---|
+| Reachable · **roaming on a foreign operator** | crossed the border; telemetry can't reach us | connectivity ticket, **no dispatch** |
+| Reachable on our own network | connectivity ruled out — it's the machine | classify fault |
 | Unreachable · weak cell (≤ −105 dBm) · neighbour cells failing | coverage gap | re-check, **no dispatch** |
 | Unreachable · **strong** cell · no neighbour failures | network is fine, so the machine died | classify fault → dispatch |
-| Reachable · **roaming on a foreign operator** | crossed the border; telemetry can't reach us | connectivity ticket, **no dispatch** |
-| Reachable · telemetry nominal | transient dropout | re-check, **no dispatch** |
-| Reachable · telemetry age drifting | sensor fault | cheap sensor-kit dispatch |
+| Unreachable · no radio metrics · **High** area congestion | went quiet into a network already struggling here | re-check, **no dispatch** |
+| Unreachable · no radio metrics · **None/Low** congestion | the area is healthy, so the silence is the equipment | classify fault → dispatch |
+| Unreachable · **Medium** congestion, or a reading below 50% confidence | decides nothing, and isn't made to | stated on the trace, then classify fault |
 
-The second row is the one a naive reachability check gets exactly backwards. The third
+The fourth row is the one a naive reachability check gets exactly backwards. The first
 is invisible without the roaming API — the machine is healthy *and attached*, just not
 to our network, so nothing on the device can tell you why its data stopped arriving.
 NEOM sits within a few kilometres of Egyptian and Jordanian networks, so this is an
 ordinary event on that site.
 
-Three of the five outcomes send nobody. The fourth sends a sensor kit rather than a
-mechanic, and only the fifth is worth a truck and a spare part. Grading the response
-to what actually broke — not just gating dispatch on and off — is the product.
+Three of the five outcomes send nobody: a coverage gap, a machine roaming onto a foreign
+operator, and a silence the fault model reads as a transient dropout with nothing wrong.
+The fourth sends a technician with a cheap `TELEMETRY-SENSOR-KIT` rather than a mechanic,
+and only the fifth — a confirmed hardware fault — is worth a truck and the
+component-specific spare part. Grading the response to what actually broke, not just
+gating dispatch on and off, is the product.
+
+### Why Congestion Insights is load-bearing, not a fourth logo
+
+The two radio-metric rows are the ones the demo's blind-spot outcome rests on — and
+CAMARA Device Status returns **neither** signal strength nor neighbour-cell failures.
+Against the real sandbox both come back empty; in the demo they come from the dataset.
+Left there, the headline "don't send the truck" verdict would have been a property of our
+mock, not something that could ever fire against a live operator.
+
+**CAMARA Congestion Insights** grades the *serving area* rather than the device, so it
+still answers when the device itself is dark. High congestion where a machine just went
+quiet is a network failing, not a machine failing; `None`/`Low` clears the network and
+sharpens the hardware verdict instead. It is deliberately a **fallback, never an
+override** — where the radio metrics exist they win, because they describe this device at
+the moment it went silent while congestion only ever describes the neighbourhood — and
+there is a **50% confidence floor** below which the operator's own reading is shown on
+the trace and then ignored, because acting on a guess is a mistake in both directions.
+
+### Catching it before it goes quiet — Geofencing Subscriptions
+
+Everything above starts with a machine that has already gone silent. The fourth API
+family is how one stops going silent in the first place, and it is the only one that
+**pushes**: the site perimeter is registered with the operator as a CAMARA Geofencing
+subscription, and the network POSTs to our sink the moment an asset crosses it. No
+polling, and the warning lands while the machine is still healthy and still reporting.
+On a site kilometres from Egyptian and Jordanian coverage, that is the difference between
+diagnosing a silence and preventing one — so the dashboard counts these as **Incidents
+prevented**, a separate KPI from false dispatches avoided. Nothing failed; there was no
+dispatch to avoid.
 
 Dispatched jobs then complete: the technician returns to the pool and the machine
 comes back online, so the fleet heals rather than draining away a crew member per
@@ -168,7 +209,8 @@ physics being modelled rather than the classifier being clever.
 | **Telemetry simulator** | Replays each asset's real dataset readings over WebSocket; injects fault/silence on cue | `backend/app/simulator/` |
 | **Anomaly detector** | Flags a lost heartbeat, opens an incident, dispatches the agent | `backend/app/anomaly/` |
 | **AI agent** | Autonomous closed-loop investigation; emits a step-by-step reasoning trace | `backend/app/agent/` |
-| **Network as Code adapter** | CAMARA Device Status + Location Retrieval; live sandbox **or** dataset-backed mock, with mock-on-error fallback | `backend/app/nac/` |
+| **Agent memory** | Records how each incident resolved per asset and per ~2 km map cell; promotes repeat offenders to known dead zones | `backend/app/agent/memory.py` |
+| **Network as Code adapter** | Four CAMARA families — Device Status (reachability + roaming), Congestion Insights, Location Retrieval, Geofencing Subscriptions; live sandbox **or** dataset-backed mock, with mock-on-error fallback | `backend/app/nac/` |
 | **ML — diagnosis** | 4-class classifier, "what broke?" (`ml/train.py` → `ml/model.pkl`) | `backend/app/ml/client.py` |
 | **ML — prognosis** | Multi-horizon failure forecasting, "what is *about* to break?" (`ml/forecast_model.pkl`) | `backend/app/ml/forecast.py` |
 | **Operator dashboard** | Fleet map, KPIs, incident feed, live agent trace, work orders, scenario control | `frontend/` |
@@ -213,7 +255,10 @@ npm run dev
 ```
 
 Then open the dashboard, pick an asset in **Scenario control**, and hit **Cellular blind spot** or
-**Hardware fault**. Watch the agent trace and work orders update live.
+**Hardware fault**. Watch the agent trace and work orders update live. **Sensor fault** and
+**Crossed the border (roaming)** exercise the other two silent-asset outcomes; **Leaving the site
+(geofence)** walks a perfectly healthy machine west across the perimeter until the operator's
+geofence catches it — no incident opened, one prevented.
 
 ### Configuration (`.env`)
 
@@ -271,10 +316,14 @@ curl "http://127.0.0.1:8000/api/fleet/health"            # predictive maintenanc
 ## Status
 
 Prototype for the Phase 2 live demo. Working end to end: simulator → anomaly detection → agent →
-CAMARA Device Reachability Status → branch → ML → CAMARA Location Retrieval → work order + technician
-routing → live dashboard, alongside continuous failure forecasting across the fleet.
+CAMARA Device Reachability Status + Roaming + Congestion Insights → branch → ML → CAMARA Location
+Retrieval (asset, then crew) → work order + technician routing → live dashboard, with a standing
+CAMARA Geofencing subscription raising perimeter alerts alongside it and continuous failure
+forecasting across the fleet.
 
-Live CAMARA calls against the Nokia sandbox are verified and exposed in the dashboard. The fleet itself
+Live CAMARA calls against the Nokia sandbox are verified and exposed in the dashboard — the
+live-check panel shows all four families with their real endpoint paths and round-trip latency. The
+fleet itself
 is simulated and we say so: the sandbox issues a handful of test SIMs provisioned in Hungary, so they
 cannot stand in for thirty machines on a NEOM site.
 

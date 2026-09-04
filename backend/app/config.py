@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # online. Without it the six technicians are permanently busy after six dispatches
     # and every later work order is raised with nobody assigned.
     work_order_complete_seconds: int = 90
+    # A blind spot is closed with "no dispatch — we'll re-check automatically", and an
+    # ops team would re-check in about fifteen minutes. Nobody watching a demo will wait
+    # that long, so the nominal interval is compressed to this many seconds of wall
+    # clock (see agent/tools.py::RECHECK_NOMINAL_MINUTES). The trace prints whatever
+    # this produces, so the promise on screen is always the promise that gets kept.
+    recheck_after_seconds: int = 45
     # "Now" for the predictive-maintenance view: telemetry history is replayed up to
     # this instant, so the fleet shows a mix of healthy and mid-degradation machines
     # rather than only ones that have already died.
