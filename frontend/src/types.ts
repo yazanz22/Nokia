@@ -79,7 +79,11 @@ export interface WorkOrder {
   status: string;
   fault_mode: string;
   component: string;
+  // Two models, two numbers. `confidence` is the fault-mode classifier's; this one is
+  // the component model's. They sit next to each other on the card, so the card labels
+  // which is which — an unlabelled percentage beside a part name gets read as the part's.
   confidence: number;
+  component_confidence: number;
   part: string;
   asset_latitude: number;
   asset_longitude: number;

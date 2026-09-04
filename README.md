@@ -77,7 +77,9 @@ to our network, so nothing on the device can tell you why its data stopped arriv
 NEOM sits within a few kilometres of Egyptian and Jordanian networks, so this is an
 ordinary event on that site.
 
-One dispatch among five outcomes. That ratio is the product.
+Three of the five outcomes send nobody. The fourth sends a sensor kit rather than a
+mechanic, and only the fifth is worth a truck and a spare part. Grading the response
+to what actually broke — not just gating dispatch on and off — is the product.
 
 Dispatched jobs then complete: the technician returns to the pool and the machine
 comes back online, so the fleet heals rather than draining away a crew member per

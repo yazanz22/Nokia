@@ -51,9 +51,11 @@ The moment a heartbeat stops, the agent opens an incident and investigates on it
    telemetry APN stops routing to us while every on-board sensor reads normal. This
    is invisible to the device and invisible to reachability; only the operator's
    roaming view reveals it, and the correct response is a connectivity ticket.
-4. Five outcomes follow, and only one sends a person: coverage gap, roamed out,
-   transient dropout, sensor fault (a low-cost sensor kit), or a genuine hardware
-   fault.
+4. Five outcomes follow, and three of them send nobody: coverage gap, roamed out,
+   transient dropout. The fourth, a sensor fault, is worth a technician carrying a
+   low-cost telemetry sensor kit; only the fifth, a genuine hardware fault, is worth
+   a mechanic and a spare part. The response is graded to what broke, not switched
+   on and off.
 5. On a genuine fault: a diagnostic model classifies it and a component model names
    the failing part — hydraulic pump, cooling system, main bearing or alternator, at
    88.3% accuracy. CAMARA Location Retrieval then supplies network-verified

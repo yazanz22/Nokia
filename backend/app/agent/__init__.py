@@ -49,6 +49,34 @@ class StaleInvestigation(RuntimeError):
     """The fleet was reset while this investigation was in flight."""
 
 
+def _already_resolved(incident_id: str, why: str) -> bool:
+    """Has this incident already been closed by the run we are about to repeat?
+
+    The agent's terminal tools mutate the store from *inside* the Pydantic AI run:
+    they create the work order, claim the technician and close the incident, and only
+    then does Pydantic AI make one more model call to write its final text. If that
+    last call is the one that 429s — exactly the case the retry below exists for — the
+    exception surfaces after the dispatch has already landed, and re-running the
+    investigation issues a second work order, marks a second technician busy, and
+    double-counts both `dispatches_issued` and the triage-duration sample. Wiping the
+    trace on the way in hides all of it: the operator sees one clean investigation.
+
+    So every path that re-enters an investigation asks this first. Logged at INFO,
+    naming the incident, so a swallowed double-run leaves a mark instead of vanishing.
+    """
+    from ..store import store
+
+    inc = store.incidents.get(incident_id)
+    if inc is None or inc.closed_at is None:
+        return False
+    log.info(
+        "not re-running %s (%s) — already closed as %s at %s; a terminal tool landed "
+        "before the run ended",
+        incident_id, why, inc.status, inc.closed_at.isoformat(),
+    )
+    return True
+
+
 async def run_investigation(incident_id: str) -> None:
     global last_agent_used, last_agent_error
     from ..store import store
@@ -70,6 +98,10 @@ async def run_investigation(incident_id: str) -> None:
                         wait = _retry_after(exc)
                         if wait is None or attempt == 2 or store.epoch != epoch:
                             raise
+                        # Checked before the trace reset below, not after: if the
+                        # dispatch already landed, that trace is the evidence of it.
+                        if _already_resolved(incident_id, "rate-limit retry"):
+                            break
                         log.warning(
                             "rate limited on %s — retrying in %.1fs (attempt %d)",
                             incident_id, wait, attempt + 1,
@@ -87,6 +119,14 @@ async def run_investigation(incident_id: str) -> None:
             log.exception("LLM agent failed for %s — falling back to rule agent", incident_id)
             if store.epoch != epoch:
                 return
+            # Same reasoning as the retry guard, and again before the trace reset: the
+            # run can throw *after* a terminal tool has closed the incident. The LLM
+            # agent's tools are what resolved it, so record that — but leave
+            # `last_agent_error` set, because the run did fail and the debug endpoint
+            # is the only place that failure is visible.
+            if _already_resolved(incident_id, "rule-agent fallback"):
+                last_agent_used = "llm"
+                return
             # Drop the abandoned partial trace. The rule agent re-runs the whole
             # investigation, and leaving both in place shows the operator two
             # interleaved step-1s for a single incident.
@@ -97,6 +137,13 @@ async def run_investigation(incident_id: str) -> None:
         return
 
     from .rule_agent import run_rule_investigation
+
+    # The backstop. Every route into the rule agent — the LLM fallback above and a
+    # plain AGENT_MODE=rule call — passes through this line, so no path can re-open a
+    # closed incident by going around the guards above. On a first investigation the
+    # incident is open and this costs a dict lookup.
+    if _already_resolved(incident_id, "rule agent entry"):
+        return
 
     try:
         await run_rule_investigation(incident_id)

@@ -131,7 +131,8 @@ The moment a heartbeat stops, the agent opens an incident and runs its own inves
 2. "Not connected" is ambiguous: a dead engine and a coverage hole look the same. So it
    weighs serving-cell signal strength, neighbour-cell failures and roaming country to
    tell them apart.
-3. Reach a verdict — only one of five outcomes sends a human.
+3. Reach a verdict — three of five outcomes send nobody, and the two that do are graded
+   to what broke: a cheap sensor kit, or a mechanic with the right part.
 4. If it is genuinely hardware, ML identifies the failing component, CAMARA Location
    Retrieval fixes the machine's true position, and the work order routes to the nearest
    technician actually carrying that part.
@@ -139,11 +140,13 @@ No human triage at any stage.
 
 CARD 6 — THE DECISION LOOP (make this a horizontal flow diagram)
 Heartbeat lost → CAMARA Device Reachability → Disambiguate signal / neighbour cells /
-roaming → Verdict → [4 of 5 paths: no dispatch] or [1 path: ML component diagnosis →
-CAMARA Location Retrieval → work order to nearest technician carrying the part]
-Caption: Four of the five outcomes end without sending anyone. That is the product.
+roaming → Verdict → [3 of 5 paths: no dispatch] or [1 path: low-cost sensor kit] or
+[1 path: ML component diagnosis → CAMARA Location Retrieval → work order to nearest
+technician carrying the part]
+Caption: Three of the five outcomes end without sending anyone, and the fourth sends a
+sensor kit rather than a mechanic. Grading the response, not just gating it, is the product.
 
-CARD 7 — FIVE OUTCOMES, ONE DISPATCH (make this a table)
+CARD 7 — FIVE OUTCOMES, TWO GRADED DISPATCHES (make this a table)
 Columns: Situation | Network evidence | Action
 - Coverage gap | Unreachable, weak last signal, neighbour-cell failures | Log blind spot,
   schedule re-check, notify operator — NO DISPATCH

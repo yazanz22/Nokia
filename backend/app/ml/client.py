@@ -34,6 +34,18 @@ _RATIONALE = {
 }
 
 
+def _pct(v: float) -> str:
+    """Confidence as text, refusing to claim certainty.
+
+    `identify_component` returns values like 0.9999999979, which `round(x, 3)` stores as
+    exactly 1.0 — so any decimal place prints "100.0%", which reads as *more* certain
+    rather than less. A model that claims 100% invites a challenge it cannot win, and
+    the component model in particular has no null class to be certain against. State the
+    magnitude, not a certainty.
+    """
+    return ">99%" if v >= 0.995 else f"{v:.0%}"
+
+
 def features_from(sample: TelemetrySample) -> list[float]:
     return [
         float(sample.telemetry_age_sec),
@@ -110,7 +122,8 @@ class FaultModel:
                     part, lead = COMPONENT_PARTS[component]
                     rationale = (
                         f"{rationale} Recent history points to the "
-                        f"{component.replace('_', ' ')} ({comp_conf:.0%} confidence), "
+                        f"{component.replace('_', ' ')} "
+                        f"({_pct(comp_conf)} confidence), "
                         f"so the technician needs a {part}."
                     )
 
@@ -164,3 +177,28 @@ class FaultModel:
 
 
 fault_model = FaultModel()
+
+
+def warm_up() -> None:
+    """Pay the first-inference cost before the demo starts, not during it.
+
+    A DEVICE_FAILURE prediction reaches into ``forecast`` for the failing component,
+    and that path is lazy on purpose: it imports the shared feature module and parses
+    the whole 4.3 MB / 33k-row telemetry history on first use. Warm that is ~70 ms;
+    cold it is ~2 s, and unless something has already hit ``/api/fleet/health`` the
+    cold hit lands on the first live incident — the one being narrated on stage.
+
+    So we do the same work up front against a real asset id, which populates the
+    ``lru_cache`` on the history and puts ``features`` in ``sys.modules``. Called from
+    the app lifespan in a worker thread; it is pure cache-filling, so a failure here
+    costs nothing but a slow first prediction and must never take startup with it.
+    """
+    from .forecast import _history, _load_features_module, forecast_model
+
+    _load_features_module()
+    history = _history()
+    if history:
+        # Any asset will do — one real score exercises the whole predict path
+        # (feature build, model, component head) rather than just the file read.
+        forecast_model.score_asset(next(iter(history)))
+    log.info("ML warm-up complete — %d assets of history cached", len(history))

@@ -7,6 +7,7 @@ operator dashboard.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 from contextlib import asynccontextmanager
@@ -43,9 +44,27 @@ async def lifespan(app: FastAPI):
     )
     simulator.start()
     detector.start()
+
+    # Load the telemetry history and the feature module now, while nothing is watching.
+    # The first fault prediction pays that cost otherwise, and it lands on the first
+    # incident of the demo — a couple of seconds during which the simulator, the
+    # detector and the websocket feed are all stopped. In a thread and unawaited so the
+    # server is accepting requests immediately; wrapped because a missing model or CSV
+    # is a slow first prediction, never a server that refuses to start.
+    async def _warm_ml() -> None:
+        try:
+            from .ml.client import warm_up
+
+            await asyncio.to_thread(warm_up)
+        except Exception:  # noqa: BLE001
+            log.warning("ML warm-up skipped", exc_info=True)
+
+    warming = asyncio.create_task(_warm_ml())
+
     try:
         yield
     finally:
+        warming.cancel()
         await detector.stop()
         await simulator.stop()
         # The live adapter holds an httpx client. Nothing was closing it, so every

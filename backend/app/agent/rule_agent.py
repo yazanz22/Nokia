@@ -13,8 +13,10 @@ always completes, which makes it the on-stage failsafe (``AGENT_MODE=rule``).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
+from ..ml.client import _pct
 from ..models import utcnow
 from ..store import store
 from .tools import (
@@ -144,7 +146,12 @@ async def run_rule_investigation(incident_id: str) -> None:
         "Network checks out, so the silence is the equipment. Running the ML fault model on the "
         "last telemetry frame before the uplink dropped.",
     )
-    fault = predict_fault(asset_id, reach)
+    # Off the event loop. The classifier is scikit-learn, and its first call also drags
+    # in the feature module and parses 33k rows of telemetry history — ~2s of pure CPU
+    # the first time it runs. Called inline it freezes the simulator tick, the anomaly
+    # detector and every websocket send with it: the dashboard stops dead mid-incident,
+    # on stage, at exactly the moment the audience is watching the agent think.
+    fault = await asyncio.to_thread(predict_fault, asset_id, reach)
     await t.step(
         "ML fault classification complete.",
         tool="ml.predict_fault",
@@ -152,7 +159,7 @@ async def run_rule_investigation(incident_id: str) -> None:
         observation=(
             f"{fault.mode} @ {fault.confidence:.0%}"
             + (f", component: {fault.component.replace('_', ' ')} "
-               f"@ {fault.component_confidence:.0%}" if fault.component else "")
+               f"@ {_pct(fault.component_confidence)}" if fault.component else "")
             + f" (part: {fault.recommended_part or 'n/a'}). {fault.rationale}"
         ),
     )

@@ -71,15 +71,24 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
         </button>
       </div>
 
-      <button className="btn wide" disabled={busy || !target} onClick={() => fire("roaming")}>
-        Crossed the border (roaming)
+      <button className="btn wide" disabled={busy || !target} onClick={() => fire("sensor")}>
+        Sensor fault
         <span className="target">{target || "—"}</span>
       </button>
 
-      <button className="btn wide" disabled={busy || !target} onClick={() => fire("offsite")}>
-        Leaving the site (geofence)
-        <span className="target">{target || "—"}</span>
-      </button>
+      {/* The two "the machine moved" scenarios share a row: five scenario buttons
+          stacked full-width push the predictive-maintenance panel below the fold at
+          1280x720, and these two are the pair that reads as a set. */}
+      <div className="btn-row">
+        <button className="btn" disabled={busy || !target} onClick={() => fire("roaming")}>
+          Crossed the border (roaming)
+          <span className="target">{target || "—"}</span>
+        </button>
+        <button className="btn" disabled={busy || !target} onClick={() => fire("offsite")}>
+          Leaving the site (geofence)
+          <span className="target">{target || "—"}</span>
+        </button>
+      </div>
 
       <button className="btn ghost wide" disabled={busy} onClick={reset}>
         Reset fleet

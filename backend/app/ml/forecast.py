@@ -113,7 +113,23 @@ class ForecastModel:
         probs = {h: float(m.predict_proba(x)[0][1]) for h, m in self._models.items()}
         fired = [h for h in self._horizons if probs[h] >= RISK_THRESHOLD]
         horizon = min(fired) if fired else None
-        risk = max(probs.values())
+
+        # The headline risk has to be the probability AT the horizon we print next to
+        # it, or the two numbers describe different predictions. EQ-0131 showed this:
+        # it read "risk 1.0, horizon 48h" while its 24h probability was 0.001 — the
+        # risk came from max() across all three horizons and the horizon from the
+        # tightest one that fired, so the panel claimed a certainty at 48h that only
+        # the 72h model held. A judge reading that pair is being told something no
+        # single model said. Pair them: risk is probs[horizon].
+        #
+        # When nothing fires there is no horizon to be consistent with, so risk falls
+        # back to the max across horizons — the honest reading of "nothing cleared the
+        # threshold, but this is the closest it came anywhere in the next three days".
+        # The alternative, the 72h probability, throws away a machine that spikes at
+        # 24h and settles by 72h, and it is exactly those near-misses that make the
+        # ranking of the quiet half of the fleet worth anything. It also keeps
+        # score_fleet's -risk tiebreak meaningful for rows that all share horizon None.
+        risk = probs[horizon] if horizon is not None else max(probs.values())
 
         latest = window[-1]
         first = window[0]
@@ -156,6 +172,9 @@ class ForecastModel:
         return str(classes[best]), float(proba[best])
 
     def score_fleet(self, asset_ids: list[str]) -> list[dict[str, Any]]:
+        # Soonest first, then most confident. The -risk tiebreak only means anything
+        # because rows sharing a horizon are now compared on the same model's
+        # probability — before, two 48h rows could be ordered by their 72h scores.
         out = [s for aid in asset_ids if (s := self.score_asset(aid)) is not None]
         out.sort(key=lambda s: (not s["at_risk"], s["horizon_hours"] or 1e9, -s["risk"]))
         return out

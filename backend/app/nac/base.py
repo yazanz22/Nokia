@@ -90,7 +90,7 @@ class NetworkClient(Protocol):
 
 
 # The operational site perimeter. Every demo asset starts inside it — the furthest
-# is 74.9 km from this centre — so a machine outside has genuinely wandered rather
+# is 73.8 km from this centre — so a machine outside has genuinely wandered rather
 # than merely been placed awkwardly. NEOM sits at the head of the Gulf of Aqaba, so
 # leaving to the west or north is leaving toward Egyptian or Jordanian coverage.
 SITE_CENTER = (27.5581, 34.9196)

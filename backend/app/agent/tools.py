@@ -336,6 +336,7 @@ async def create_work_order(
         fault_mode=fault.mode,
         component=fault.component,
         confidence=fault.confidence,
+        component_confidence=fault.component_confidence,
         part=part,
         asset_latitude=location.latitude,
         asset_longitude=location.longitude,

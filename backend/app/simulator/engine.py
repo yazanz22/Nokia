@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import random
 from datetime import timedelta
 
@@ -21,6 +22,8 @@ from ..models import TelemetrySample, utcnow
 from ..ratelimit import inject_limiter, live_check_limiter
 from ..store import store
 from .profiles import build_profiles
+
+log = logging.getLogger("simulator")
 
 # Scenario name -> dataset label
 SCENARIOS = {
@@ -63,6 +66,24 @@ def _reset_geofence_state() -> None:
         reset()
 
 
+def _log_task_exit(task: asyncio.Task) -> None:
+    """Say something out loud if the tick loop ever stops.
+
+    ``self._task`` keeps a strong reference to the task, so asyncio's "Task exception
+    was never retrieved" warning only fires when the task is garbage collected — which,
+    for a task held by a module-level singleton, is never. A loop that died took the
+    whole dashboard down with it and printed nothing at all. Cancellation is how stop()
+    and the reset path end the loop, so that one is not a failure.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.critical("simulator loop died — telemetry has stopped", exc_info=exc)
+    else:
+        log.critical("simulator loop returned unexpectedly — telemetry has stopped")
+
+
 class SimulatorEngine:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
@@ -78,8 +99,26 @@ class SimulatorEngine:
     # ── lifecycle ─────────────────────────────────────────────────────────
     def start(self) -> None:
         self._profiles = build_profiles(list(store.assets.keys()))
+        self._ensure_running()
+
+    def _ensure_running(self) -> None:
+        """(Re)create the tick task unless a live one is already there.
+
+        A task that raised is ``done()``, not running, and a dead task sitting in
+        ``self._task`` is indistinguishable from a live one to every caller — which is
+        how a single bad tick used to freeze the fleet until the server was restarted.
+        Replacing a finished task here is what lets the Reset button bring it back.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # Nothing to schedule on: reseed() is also called synchronously from tests
+            # and scripts. Boot always calls start() from inside the lifespan, so the
+            # real server never lands here.
+            return
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run(), name="simulator")
+            self._task.add_done_callback(_log_task_exit)
 
     async def stop(self) -> None:
         if self._task:
@@ -95,6 +134,10 @@ class SimulatorEngine:
         self._silent.clear()
         self._drifting.clear()
         _reset_geofence_state()
+        # Reset has to be able to recover a loop that died mid-demo. Clearing the
+        # scenario state alone would leave the dashboard exactly as frozen as it was,
+        # only now with a clean fleet on it.
+        self._ensure_running()
 
     # ── scenario control (called by the /scenarios route) ────────────────
     def inject(self, asset_id: str, scenario: str) -> str:
@@ -157,62 +200,73 @@ class SimulatorEngine:
     async def _run(self) -> None:
         settings = get_settings()
         while True:
-            now = utcnow()
-            moved: list[str] = []
-            for asset_id, asset in list(store.assets.items()):
-                if asset_id in self._silent:
-                    continue  # heartbeat lost — emit nothing
-                prof = self._profiles.get(asset_id)
-                if prof is None:
-                    continue
-                row = prof.next_normal()
-                if row is None:
-                    continue
-                if asset_id in self._drifting:
-                    # Heading west, across the Gulf toward Egyptian coverage.
-                    asset.longitude -= DRIFT_STEP_DEG
-                    asset.latitude += self._rng.uniform(-0.0004, 0.0004)
-                    out_km = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
-                    if out_km > SITE_RADIUS_KM + DRIFT_STOP_KM:
-                        self._drifting.discard(asset_id)
-                else:
-                    # Gentle positional drift so the map feels alive.
-                    asset.latitude += self._rng.uniform(-0.0008, 0.0008)
-                    asset.longitude += self._rng.uniform(-0.0008, 0.0008)
-                moved.append(asset_id)
-                sample = TelemetrySample(
-                    asset_id=asset_id,
-                    ts=now,
-                    reachable=True,
-                    telemetry_age_sec=max(0.0, row["telemetry_age_sec"]),
-                    signal_strength_dbm=row["signal_strength_dbm"],
-                    neighbor_fail_count=row["neighbor_fail_count"],
-                    engine_temp_c=row["engine_temp_c"],
-                    ground_truth="NORMAL",
-                )
-                store.record_telemetry(sample)
-            # Crews drive between jobs. A stationary technician would make locating
-            # them pointless — you ask precisely because they have moved.
-            for tech in store.technicians.values():
-                if tech.available:
-                    tech.latitude += self._rng.uniform(-0.0015, 0.0015)
-                    tech.longitude += self._rng.uniform(-0.0015, 0.0015)
-            # Ask the network which machines have crossed the site boundary. In live
-            # mode these arrive at a webhook rather than being collected here; the
-            # contract and the resulting alert are the same either way.
-            collect = getattr(get_network_client(), "collect_geofence_events", None)
-            if callable(collect):
-                for ev in collect(list(store.assets.values())):
-                    store.raise_geofence_alert(ev)
-            store.publish_positions(moved)
-            store.publish_technicians()
-            store.advance_work_orders()
-            # The limiters keep a bucket per client IP. Nothing was calling prune(),
-            # so on a public URL the dict grew by one entry per crawler, forever.
-            inject_limiter.prune()
-            live_check_limiter.prune()
-            store.publish_kpis()
+            # One bad tick is a bad tick, not the end of the fleet. A malformed dataset
+            # row or a network client that threw used to kill the loop outright and take
+            # every asset's telemetry with it, silently. Log it and keep ticking; the
+            # sleep sits outside so a tick that fails every time stays a slow complaint
+            # rather than a busy spin that pins a core.
+            try:
+                self._tick()
+            except Exception:  # noqa: BLE001
+                log.exception("simulator tick failed — skipping this tick")
             await asyncio.sleep(settings.sim_tick_seconds)
+
+    def _tick(self) -> None:
+        now = utcnow()
+        moved: list[str] = []
+        for asset_id, asset in list(store.assets.items()):
+            if asset_id in self._silent:
+                continue  # heartbeat lost — emit nothing
+            prof = self._profiles.get(asset_id)
+            if prof is None:
+                continue
+            row = prof.next_normal()
+            if row is None:
+                continue
+            if asset_id in self._drifting:
+                # Heading west, across the Gulf toward Egyptian coverage.
+                asset.longitude -= DRIFT_STEP_DEG
+                asset.latitude += self._rng.uniform(-0.0004, 0.0004)
+                out_km = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
+                if out_km > SITE_RADIUS_KM + DRIFT_STOP_KM:
+                    self._drifting.discard(asset_id)
+            else:
+                # Gentle positional drift so the map feels alive.
+                asset.latitude += self._rng.uniform(-0.0008, 0.0008)
+                asset.longitude += self._rng.uniform(-0.0008, 0.0008)
+            moved.append(asset_id)
+            sample = TelemetrySample(
+                asset_id=asset_id,
+                ts=now,
+                reachable=True,
+                telemetry_age_sec=max(0.0, row["telemetry_age_sec"]),
+                signal_strength_dbm=row["signal_strength_dbm"],
+                neighbor_fail_count=row["neighbor_fail_count"],
+                engine_temp_c=row["engine_temp_c"],
+                ground_truth="NORMAL",
+            )
+            store.record_telemetry(sample)
+        # Crews drive between jobs. A stationary technician would make locating
+        # them pointless — you ask precisely because they have moved.
+        for tech in store.technicians.values():
+            if tech.available:
+                tech.latitude += self._rng.uniform(-0.0015, 0.0015)
+                tech.longitude += self._rng.uniform(-0.0015, 0.0015)
+        # Ask the network which machines have crossed the site boundary. In live
+        # mode these arrive at a webhook rather than being collected here; the
+        # contract and the resulting alert are the same either way.
+        collect = getattr(get_network_client(), "collect_geofence_events", None)
+        if callable(collect):
+            for ev in collect(list(store.assets.values())):
+                store.raise_geofence_alert(ev)
+        store.publish_positions(moved)
+        store.publish_technicians()
+        store.advance_work_orders()
+        # The limiters keep a bucket per client IP. Nothing was calling prune(),
+        # so on a public URL the dict grew by one entry per crawler, forever.
+        inject_limiter.prune()
+        live_check_limiter.prune()
+        store.publish_kpis()
 
 
 simulator = SimulatorEngine()

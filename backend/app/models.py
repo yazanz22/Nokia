@@ -156,7 +156,11 @@ class WorkOrder(BaseModel):
     status: WorkOrderStatus = "created"
     fault_mode: str = ""
     component: str = ""
+    # Two models, two numbers: `confidence` is the classifier's confidence in the
+    # fault mode, `component_confidence` the prognostic model's confidence in the
+    # part it named. Carry both so the card never has to pass one off as the other.
     confidence: float = 0.0
+    component_confidence: float = 0.0
     part: str = ""
     asset_latitude: float = 0.0
     asset_longitude: float = 0.0

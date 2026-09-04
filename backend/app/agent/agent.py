@@ -9,6 +9,7 @@ If it doesn't, ``run_investigation`` falls back to the rule agent.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -205,7 +206,11 @@ def _build_agent():
         d = ctx.deps
         if d._reach is None:
             d._reach = await check_device_status(d.asset_id)
-        fault = predict_fault(d.asset_id, d._reach)  # type: ignore[arg-type]
+        # Off the event loop — scikit-learn inference is CPU-bound, and the first call
+        # of the run also parses 33k rows of telemetry history behind it. Inline it
+        # stalls the simulator, the detector and every websocket send for ~2s while the
+        # dashboard sits frozen mid-investigation.
+        fault = await asyncio.to_thread(predict_fault, d.asset_id, d._reach)  # type: ignore[arg-type]
         ctx.deps.last_fault = fault
         await ctx.deps.tracer.step(
             "Ran the ML fault classifier.",
@@ -307,7 +312,11 @@ def _build_agent():
         if v.category == "coverage_gap":
             return await resolve_as_blindspot(ctx, v.explanation)
 
-        fault = d.last_fault or predict_fault(d.asset_id, reach)  # type: ignore[arg-type]
+        # Same reason as in `predict_fault_tool`: off the event loop, because a model
+        # that dispatches without classifying first pays the full cold cost right here.
+        fault = d.last_fault or await asyncio.to_thread(
+            predict_fault, d.asset_id, reach  # type: ignore[arg-type]
+        )
 
         # Belt and braces behind the verdict guard: the classifier reads the radio
         # channels itself and can call an outage that the assessment scored as

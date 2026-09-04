@@ -73,7 +73,7 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 - [ ] KPI bar reads `100.0%` / `30/30` / all zeros — including **Incidents prevented**
 - [ ] The **site perimeter** ring is drawn on the map. The geofence beat is meaningless without a
-      visible boundary, and every asset starts inside it (furthest is 74.9 km of an 80 km radius)
+      visible boundary, and every asset starts inside it (furthest is 73.8 km of an 80 km radius)
 - [ ] `EQ-0295` selected in the dropdown, ready for the first click
 - [ ] Notifications off, Do Not Disturb on, Slack and mail closed
 
@@ -212,8 +212,8 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 **Driver:** point at the **"nearest technician isn't carrying the part"** line on the card.
 
-> "And look at this. Omar Farouk is **≈22 km** away. Sara Al-Balushi is **≈24 km** — further. It sent
-> Sara. Why? Because Omar isn't carrying an alternator.
+> "And look at this. Ziad Khalifeh is **≈19 km** away. Lina Karam is **≈20 km** — further. It sent
+> Lina. Why? Because Ziad isn't carrying an alternator.
 >
 > A closer technician who can't fix it isn't a better answer — it's a second trip. Twenty-five percent
 > of field service calls need one. This is how you don't make that mistake."
@@ -438,7 +438,8 @@ the model's own, not templated.
 Five outcomes, not two. Coverage gap → no dispatch. Roamed onto a foreign network → connectivity
 ticket, no dispatch. Reachable with nominal telemetry → transient dropout, re-check, no dispatch.
 Sensor fault → a low-cost sensor kit, not a mechanic. Genuine hardware fault → dispatch with the
-identified part. Four of the five don't send anyone.
+identified part. Three of the five send nobody at all; the fourth sends a sensor kit instead of a
+mechanic. The response is graded to what actually broke, not switched on and off.
 And critically, that's enforced *inside* the terminal tools. Every one of them independently
 re-derives the verdict from the network evidence before it will act, so a healthy classification
 cannot become a work order regardless of what the model decides.

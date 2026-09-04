@@ -2,10 +2,23 @@ import { useState } from "react";
 import { completeWorkOrder, deleteWorkOrder } from "../lib/api";
 import type { WorkOrder } from "../types";
 
+// The component model routinely answers 0.9999999979, and a plain round prints
+// "100% confidence" — a claim no model can defend and the first thing anyone will
+// challenge. Above 99.5% we say ">99%" instead: honest about the magnitude without
+// asserting certainty. A decimal place would have printed "100.0%", which is worse.
+const pct = (v: number) => (v >= 0.995 ? ">99%" : `${(v * 100).toFixed(0)}%`);
+
 export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const done = wo.status === "completed";
+
+  // Two separate models produce two separate numbers, and unlabelled they get read
+  // as one: `confidence` is the classifier's confidence in the *fault mode*, while
+  // this is the prognostic model's confidence in the *component* it named. The
+  // shared WorkOrder type is owned elsewhere, so read the field locally.
+  const componentConfidence =
+    wo.component_confidence ?? 0;
 
   // The list is driven by the websocket, so there is nothing to update locally —
   // this only guards against a double-click while the request is in flight.
@@ -37,7 +50,7 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
         <span className="wo-fault">
           {wo.fault_mode.replace("_", " ")}
           <br />
-          {(wo.confidence * 100).toFixed(0)}% confidence
+          <span className="conf">{pct(wo.confidence)} fault-mode confidence</span>
         </span>
       </div>
 
@@ -45,7 +58,12 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
         <dt>Asset</dt>
         <dd>{wo.asset_id}</dd>
         <dt>Component</dt>
-        <dd>{wo.component ? wo.component.replace(/_/g, " ") : "—"}</dd>
+        <dd>
+          {wo.component ? wo.component.replace(/_/g, " ") : "—"}
+          {wo.component && componentConfidence > 0 ? (
+            <span className="conf"> · {pct(componentConfidence)} component confidence</span>
+          ) : null}
+        </dd>
         <dt>Part</dt>
         <dd>{wo.part || "—"}</dd>
         <dt>Technician</dt>

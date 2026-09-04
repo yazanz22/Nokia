@@ -110,8 +110,13 @@ export default function App() {
   const traceSteps = traceIncidentId ? state.trace[traceIncidentId] ?? [] : [];
   const traceIncident = traceIncidentId ? state.incidents[traceIncidentId] : undefined;
   const investigating = traceIncident?.closed_at === null;
-  const traceWorkOrders = workOrders.filter((w) => w.incident_id === traceIncidentId);
-  const shownWorkOrders = traceWorkOrders.length ? traceWorkOrders : workOrders;
+  // Scoped to the incident on screen, and left empty when that incident dispatched
+  // nobody. Falling back to every work order made a blind-spot incident — the one
+  // whose whole point is that no truck rolled — display the hardware incident's
+  // technician underneath it.
+  const shownWorkOrders = traceIncidentId
+    ? workOrders.filter((w) => w.incident_id === traceIncidentId)
+    : workOrders;
 
   const asset = selectedAsset ? state.assets[selectedAsset] ?? null : null;
 
@@ -254,12 +259,23 @@ export default function App() {
             </header>
             <div className="body">
               {shownWorkOrders.length === 0 ? (
-                <div className="empty">
-                  <strong>None issued</strong>
-                  <span>
-                    A work order is only raised once the network has been ruled out as the cause.
-                  </span>
-                </div>
+                traceIncidentId ? (
+                  <div className="empty">
+                    <strong>{investigating ? "Not yet" : "No dispatch"}</strong>
+                    <span>
+                      {investigating
+                        ? "A work order is only raised once the network has been ruled out as the cause."
+                        : "This incident resolved without sending anyone — the saving, not a gap in the record."}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="empty">
+                    <strong>None issued</strong>
+                    <span>
+                      A work order is only raised once the network has been ruled out as the cause.
+                    </span>
+                  </div>
+                )
               ) : (
                 shownWorkOrders.map((w) => <WorkOrderCard key={w.id} wo={w} />)
               )}

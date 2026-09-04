@@ -414,10 +414,13 @@ body {
 }
 
 /* ── scenario control ────────────────────────────────────────────────── */
+/* Five scenario buttons plus reset live in this panel, and the column below it
+   (predictive maintenance) takes whatever is left at 1280x720 — so the stack is
+   spaced tightly enough that the fifth control costs the panel almost nothing. */
 .scenario {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 7px;
 }
 
 .field-label {
@@ -925,6 +928,14 @@ button:focus-visible {
   font-size: 11px;
   color: var(--dispatch);
   text-align: right;
+}
+
+/* Which model each number came from. Quiet enough not to compete with the value,
+   loud enough that nobody reads the fault-mode score as a claim about the part. */
+.wo-fault .conf,
+.wo-grid .conf {
+  color: var(--muted);
+  font-size: 10.5px;
 }
 
 .wo-grid {
