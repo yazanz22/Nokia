@@ -470,6 +470,26 @@ forecasting and component models. The honest part: in the diagnostic set `NORMAL
 confuses about half the sensor faults with healthy readings, and we know exactly why. What it
 separates cleanly is the decision that actually matters: coverage gap versus hardware failure.
 
+**"Do real machines actually measure vibration and oil particles?"**
+Yes, and it is worth answering precisely because the two are not equally routine.
+
+Vibration is standard condition monitoring and already arrives as telemetry — post-2015 Cat and
+Komatsu machines broadcast hundreds of CAN-bus points, accelerometers are cheap, and Komatsu sells
+vibration analysis as a machine-health service today.
+
+Oil is the honest caveat. On heavy equipment it is predominantly *scheduled sampling*, not a live
+feed: a technician draws a sample and Cat's S·O·S lab turns it round in about a day. Inline
+oil-debris sensors exist — inductive, capacitive, optical — and are an active field precisely
+because lab sampling cannot reflect real-time status, but they are not standard fitment the way
+engine data is.
+
+We model both as continuous because what the model needs is a multi-day trend, and sampling gives
+you that anyway at lower resolution. On a real fleet today those two channels would arrive at
+different cadences and the ingestion layer would carry that. Sources are in `docs/EVIDENCE.md` §6.
+
+**Say this rather than implying everything streams.** It shows you know the domain and not just
+the dataset, and the answer is stronger than the hedge.
+
 **"Your forecasting AUC is basically 1.0 — isn't that too good?"**
 On synthetic data, yes, AUC is the wrong number to judge us on and we don't lead with it. The number
 we report is **warning time against the obvious baseline**: at two to three days out the model flags

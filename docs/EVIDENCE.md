@@ -93,6 +93,25 @@ precisely what NEOM is building.
 
 ---
 
+## 6. The channels we model are the ones the industry actually instruments
+
+The forecasting model reads vibration and oil-particle trends because those move days
+before engine temperature does. That ordering is the product, so it is worth showing
+these are real instrumentation practice rather than plausible-sounding channels we
+invented to make the story work.
+
+| Claim | Source |
+|---|---|
+| Vibration monitoring is standard condition monitoring on heavy equipment — accelerometers detect imbalance in bearings, gears and shafts, and the signature changes before failure | [Komatsu machine health monitoring](https://www.komatsu.com/en-us/services-and-support/joy-equipment-services/machine-health-monitoring) (vendor, labelled) |
+| Post-2015 Cat and Komatsu machines broadcast hundreds of CAN-bus points over integrated telematics (Cat Connect / Product Link, KOMTRAX); vibration sensors are inexpensive | [Predictive maintenance for heavy equipment](https://heavyvehicleinspection.com/blog/post/predictive-maintenance-heavy-equipment-2026-guide) (vendor, labelled) |
+| Oil analysis detects component wear from particles in the fluid, and is explicitly sold as trend analysis that finds problems "long before they materialize" | [Cat S·O·S Fluid Analysis](https://www.foleyeq.com/service/cat-service-technology/cat-sos-fluid-sampling/) (vendor, labelled) |
+| Inline oil-debris sensors exist and are an active field — inductive, capacitive and optical methods — motivated precisely because offline lab sampling is slow and cannot reflect real-time oil status | [Impedance micro-sensor for metal debris monitoring of hydraulic oil](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7913635/) (peer-reviewed) |
+
+**What this establishes and what it does not.** It establishes that vibration and oil
+wear are genuinely the leading indicators maintenance engineers use, and that vibration
+in particular already arrives as telemetry. It does not establish that a given fleet
+streams oil-particle counts continuously — see the caveat below.
+
 ## What this is worth on a giga-project fleet
 
 **Illustrative arithmetic, not a measurement.** Written out so the assumptions are visible
@@ -129,5 +148,14 @@ and is stated rather than buried.
   this approach does not apply. Giga-projects built with a national operator are where it does.
 - **Querying a SIM's status needs a commercial relationship with the operator holding it.**
   Straightforward, but real plumbing for a contractor running mixed fleets across carriers.
+- **Oil-particle counts are not usually a live feed.** Vibration is standard telemetry
+  today; oil condition on heavy equipment is predominantly *scheduled sampling* — a
+  technician draws a sample and the lab turns it round in about 24 hours ([Cat
+  S·O·S](https://www.foleyeq.com/service/cat-service-technology/cat-sos-fluid-sampling/)).
+  Inline debris sensors exist and are getting cheaper, but they are not standard fitment
+  the way engine ECU data is. We model both channels as continuous because the signal the
+  model needs is a multi-day trend, which sampling supplies anyway at lower resolution —
+  but on a real fleet today the two channels would arrive at different cadences, and the
+  ingestion layer would have to carry that.
 - **Several sources above are vendors sizing a problem they sell into.** They are labelled,
   and we lean on the research-house figures where they exist.
