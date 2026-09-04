@@ -47,6 +47,29 @@ def test_low_congestion_exonerates_the_network_and_points_at_the_machine():
     assert v.dispatch is True
 
 
+def test_low_confidence_decides_nothing_even_when_congestion_is_high():
+    """The sandbox routinely returns High at 9-22% confidence.
+
+    Acting on that would withhold a dispatch on the operator's own admission that it
+    is unsure — leaving a broken machine in the desert on a guess.
+    """
+    v = assess_silence(_reach(congestion_level="High", congestion_confidence=22))
+    assert v.category == "inconclusive"
+    assert v.dispatch is True
+    assert "22%" in v.explanation
+
+
+def test_low_confidence_does_not_clear_the_network_either():
+    """Symmetric: a weak 'Low' must not be grounds for rolling a truck."""
+    v = assess_silence(_reach(congestion_level="Low", congestion_confidence=12))
+    assert v.category == "inconclusive"
+
+
+def test_confidence_at_the_floor_counts():
+    v = assess_silence(_reach(congestion_level="High", congestion_confidence=50))
+    assert v.category == "coverage_gap"
+
+
 def test_medium_congestion_decides_nothing():
     """Not clean enough either way to spend or withhold a dispatch on."""
     v = assess_silence(_reach(congestion_level="Medium", congestion_confidence=50))

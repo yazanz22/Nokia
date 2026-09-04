@@ -33,6 +33,14 @@ HOME_COUNTRY = "SA"
 CONGESTION_BLAMES_NETWORK = {"High"}
 CONGESTION_CLEARS_NETWORK = {"None", "Low"}
 
+# Congestion Insights reports how sure the operator is, and below half sure it is not
+# evidence — it is a guess with a number attached. Acting on it either way is a real
+# mistake in both directions: withhold a dispatch on a low-confidence "High" and a
+# broken machine sits in the desert; spend one on a low-confidence "Low" and a truck
+# rolls for nothing. Under this floor the reading is reported and ignored, and the
+# silence falls through to the fault model as it did before.
+MIN_CONGESTION_CONFIDENCE = 50
+
 
 async def check_device_status(asset_id: str) -> Reachability:
     return await get_network_client().get_reachability(asset_id)
@@ -114,6 +122,16 @@ def assess_silence(reach: Reachability) -> SilenceVerdict:
     if sig is None and reach.congestion_level:
         conf = reach.congestion_confidence
         conf_text = f" at {conf}% confidence" if conf is not None else ""
+        # A reading the operator is not confident in decides nothing. Say so out loud
+        # rather than quietly discarding it — the number is on the dashboard, and an
+        # operator who can see "High" needs to know why it did not count.
+        if conf is not None and conf < MIN_CONGESTION_CONFIDENCE:
+            return SilenceVerdict(
+                True, "inconclusive",
+                f"The operator reports {reach.congestion_level.lower()} congestion here but only "
+                f"{conf}% confidence in that reading, which is too weak to decide either way. "
+                "Treating the silence as a possible fault and handing it to the model.",
+            )
         if reach.congestion_level in CONGESTION_BLAMES_NETWORK:
             return SilenceVerdict(
                 dispatch=False,

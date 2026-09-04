@@ -121,6 +121,13 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
                     : ""}
                 </span>
               </div>
+              {res.congestion_insights.result.confidence_level != null &&
+                res.congestion_insights.result.confidence_level < 50 && (
+                  <div className="hint" style={{ marginTop: 4 }}>
+                    Below our 50% confidence floor, so the agent reports this and decides on other
+                    evidence. The sandbox returns a fresh synthetic reading per call.
+                  </div>
+                )}
             </div>
           )}
 
