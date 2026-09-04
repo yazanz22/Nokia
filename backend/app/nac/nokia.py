@@ -306,8 +306,6 @@ def parse_location(body: object) -> tuple[float, float, float, datetime]:
 class NokiaNaCClient:
     """CAMARA Device Status + Location Retrieval against the Nokia sandbox."""
 
-    source = "live"
-
     def __init__(self) -> None:
         settings = get_settings()
         self._device_map = settings.device_map()

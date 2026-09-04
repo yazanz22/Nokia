@@ -31,8 +31,6 @@ from .base import (
 
 
 class MockNaCClient:
-    source = "mock"
-
     def __init__(self, latency_seconds: float = 0.6) -> None:
         self._latency = latency_seconds
         self._rng = random.Random(99)

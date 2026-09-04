@@ -30,6 +30,7 @@ from .tools import (
     park_awaiting_crew,
     predict_fault,
     queued_observation,
+    notify_operator,
     schedule_recheck,
 )
 from .memory import memory
@@ -216,11 +217,16 @@ def _build_agent():
             return _already_resolved_reply(d)
         country = getattr(reach, "country", None) or "a foreign"
         recheck_at = schedule_recheck(d.asset_id, minutes=30)
+        notice = notify_operator(
+            d.asset_id,
+            f"roaming on {country}; APN unreachable from that network. Connectivity "
+            f"ticket raised, re-check at {recheck_at:%H:%M UTC}. No technician sent.",
+        )
         await d.tracer.step(
             "Raising a connectivity ticket, not a field job. Nobody is dispatched.",
             tool="ops.notify_operator",
             args={"asset_id": d.asset_id, "queue": "connectivity"},
-            observation=f"roaming on {country}; APN unreachable from that network",
+            observation=notice,
         )
         inc = store.incidents[d.incident_id]
         store.set_asset_state(d.asset_id, "blindspot")

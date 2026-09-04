@@ -2,7 +2,15 @@ import { useCallback, useMemo, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Asset, DeadZone, Technician, WorkOrder } from "../types";
 
-// Mirrors nac/base.py — the operational site perimeter.
+// The operational site perimeter. SOURCE OF TRUTH: backend/app/nac/base.py
+// (SITE_CENTER / SITE_RADIUS_KM). These are copies, deliberately: a browser cannot
+// import Python, and the alternative — putting them on the wire in the websocket
+// snapshot — would make a fixed geographic constant into a runtime dependency, so the
+// perimeter ring could not be drawn until the first frame arrived and every reader
+// would need a fallback for a value that has never changed. What made the duplication
+// dangerous was that nothing compared the two, so that is what is fixed instead:
+// backend/tests/test_no_duplicate_contracts.py reads THIS file and fails if either
+// number stops matching the Python. Change them there first.
 const SITE_CENTER: [number, number] = [27.5581, 34.9196];
 const SITE_RADIUS_KM = 80;
 

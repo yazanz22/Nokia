@@ -84,6 +84,26 @@ class Settings(BaseSettings):
     # this instant, so the fleet shows a mix of healthy and mid-degradation machines
     # rather than only ones that have already died.
     forecast_as_of: str = "2026-08-18T06:00:00"
+    # /docs, /redoc and /openapi.json. On by default: the generated reference is how a
+    # judge inspects the CAMARA surface without reading the source — the live-check
+    # endpoint, the geofencing sink, the scenario controls — and it exposes no secret,
+    # because it describes routes that answer to plain curl either way. What Swagger's
+    # "Try it out" adds is convenience, not access: every mutating route here is
+    # deliberately unauthenticated (scenario injection is already rate-limited, and
+    # reset is a button on the dashboard itself), so the exposure is those routes, not
+    # their documentation, and hiding the documentation would cost the demo its
+    # clearest self-explanation while moving nothing. It is a switch rather than a
+    # constant because that calculus changes the day this URL outlives the hackathon.
+    docs_enabled: bool = True
+    # How many dashboards the event bus will carry at once. The deployed demo is a
+    # single public URL with no authentication, so the number of listeners is whatever
+    # the internet decides. Each one costs a 1000-slot queue, a full store.snapshot()
+    # at connect time, and a slot in every fan-out for the life of the socket — on a
+    # 512MB instance a shared link, a crawler or a reconnect storm holding sockets open
+    # is enough to walk the process into the OOM killer. Past this many the bus refuses
+    # outright rather than degrading for the people already watching; the dashboard
+    # reconnects with backoff, so a refusal is temporary from the client's side.
+    max_ws_subscribers: int = 32
 
     def export_provider_keys(self) -> None:
         """Publish LLM keys into the process environment.

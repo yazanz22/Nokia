@@ -11,7 +11,6 @@ import asyncio
 import contextlib
 import logging
 import mimetypes
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -169,39 +168,25 @@ class BodySizeLimit:
         await response(scope, receive, send)
 
 
-# ── API documentation ────────────────────────────────────────────────────────
-# /docs and /openapi.json stay on by default. The generated reference is how a judge
-# inspects the CAMARA surface without reading the source — the live-check endpoint,
-# the geofencing sink, the scenario controls — and it exposes no secret: it describes
-# routes that answer to plain curl either way. What Swagger's "Try it out" adds is
-# convenience, not access. Every mutating route here is deliberately unauthenticated
-# (scenario injection is already rate-limited, and reset is a button on the dashboard
-# itself), so the exposure is those routes, not their documentation; hiding the
-# documentation would cost the demo its clearest self-explanation and move nothing.
-#
-# It is a switch rather than a constant because that calculus changes the day this URL
-# outlives the hackathon: DOCS_ENABLED=0 turns all three off. Read straight from the
-# environment rather than added to Settings only because config.py is outside the
-# scope of this change — it belongs there.
-_DOCS_ENABLED = os.environ.get("DOCS_ENABLED", "1").strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}
+_settings = get_settings()
 
+# ── API documentation ────────────────────────────────────────────────────────
+# /docs, /redoc and /openapi.json stay on by default, and DOCS_ENABLED=0 turns all
+# three off together. See Settings.docs_enabled for why the default is on — briefly:
+# the generated reference is how a judge inspects the CAMARA surface without reading
+# the source, and the exposure is the unauthenticated routes themselves rather than
+# their documentation.
 app = FastAPI(
     title="FILO Asset Sentinel",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs" if _DOCS_ENABLED else None,
-    redoc_url="/redoc" if _DOCS_ENABLED else None,
-    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
+    docs_url="/docs" if _settings.docs_enabled else None,
+    redoc_url="/redoc" if _settings.docs_enabled else None,
+    openapi_url="/openapi.json" if _settings.docs_enabled else None,
 )
 # CORS exists only for local development, where Vite serves the dashboard on :5173
 # and proxies to this API. A deployed build is served from this same origin, so no
 # cross-origin access is needed and a wildcard would just let any site drive the demo.
-_settings = get_settings()
 if not (REPO_ROOT / "frontend" / "dist").is_dir():
     app.add_middleware(
         CORSMiddleware,

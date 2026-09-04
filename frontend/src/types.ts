@@ -39,7 +39,6 @@ export interface TelemetrySample {
   signal_strength_dbm: number;
   neighbor_fail_count: number;
   engine_temp_c: number;
-  ground_truth: string | null;
 }
 
 export type IncidentStatus =
@@ -111,7 +110,6 @@ export interface GeofenceAlert {
   distance_km: number;
   at: string;
   source: string;
-  acknowledged: boolean;
 }
 
 export interface Kpis {

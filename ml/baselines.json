@@ -8,17 +8,17 @@
   "thresholds": {
     "vibration_slope": 0.070548,
     "vibration_slope_rate_matched_to": "model firing rate on the held-out split",
-    "engine_temp_c": 94.8
+    "engine_temp_c": 94.78
   },
   "firings": {
     "model": 1921,
     "vibration_slope": 1921,
-    "engine_temp": 840
+    "engine_temp": 842
   },
   "firing_rate": {
     "model": 0.1592,
     "vibration_slope": 0.1592,
-    "engine_temp": 0.0696
+    "engine_temp": 0.0698
   },
   "detection_by_horizon": {
     "96-120h": {
@@ -65,7 +65,7 @@
   "precision_in_ramp": {
     "model": 1.0,
     "vibration_slope": 0.9001,
-    "engine_temp": 0.7774
+    "engine_temp": 0.7755
   },
   "slope_feature": "vibration_mm_s_slope",
   "slope_feature_index": 3

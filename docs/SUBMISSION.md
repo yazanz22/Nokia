@@ -142,6 +142,13 @@ The service sleeps after 15 minutes idle on Render's free plan and takes about a
 minute to wake, so a scheduled health check keeps it warm through the review window
 (`.github/workflows/keepalive.yml`).
 
+`.github/workflows/tests.yml` runs the backend suite and the frontend build on every
+push and pull request. It installs from `backend/requirements.lock.txt` rather than the
+range file, and asserts before the suite that the committed models actually loaded as
+trained — a scikit-learn mismatch makes an unpickle fail silently into a rule-based
+fallback, which would otherwise make the suite *greener* rather than redder, because
+the tests that need the forecast model skip themselves when it is unavailable.
+
 ## Repository URL
 
 ```

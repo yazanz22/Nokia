@@ -35,6 +35,7 @@ from .tools import (
     park_awaiting_crew,
     predict_fault,
     queued_observation,
+    notify_operator,
     schedule_recheck,
 )
 from .memory import memory
@@ -92,11 +93,16 @@ async def run_rule_investigation(incident_id: str) -> None:
         # to somebody else's network — so the fix is a connectivity ticket, and
         # sending a mechanic would be as wasted a trip as chasing a coverage gap.
         recheck_at = schedule_recheck(asset_id, minutes=30)
+        notice = notify_operator(
+            asset_id,
+            f"roaming on {reach.country}; APN unreachable from that network. Connectivity "
+            f"ticket raised, re-check at {recheck_at:%H:%M UTC}. No technician sent.",
+        )
         await t.step(
             "Raising a connectivity ticket, not a field job. Nobody is dispatched.",
             tool="ops.notify_operator",
             args={"asset_id": asset_id, "queue": "connectivity", "at": recheck_at.isoformat()},
-            observation=f"roaming on {reach.country}; APN unreachable from that network",
+            observation=notice,
         )
         store.set_asset_state(asset_id, "blindspot")
         store.record_blindspot_avoided()

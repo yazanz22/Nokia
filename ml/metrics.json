@@ -37,7 +37,7 @@
     "pr_auc": 0.9982,
     "horizon_hours": 72.0,
     "window_readings": 8,
-    "temperature_baseline_c": 94.8,
+    "temperature_baseline_c": 94.78,
     "detection_by_horizon": {
       "96-120h": {
         "model_detection_rate": 0.0,

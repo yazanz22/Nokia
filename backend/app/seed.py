@@ -15,7 +15,9 @@ import functools
 import hashlib
 import math
 import random
+import sys
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -23,7 +25,43 @@ import numpy as np
 from .config import DATASET_PATH, HISTORY_PATH, get_settings
 from .models import Asset, AssetKind, Technician
 
-LABELS = ("NORMAL", "NETWORK_OUTAGE", "DEVICE_FAILURE", "SENSOR_FAILURE")
+# ── The model contracts live on the training side ───────────────────────────
+#
+# ``ml/features.py`` declares the fault classes, the component list and the diagnostic
+# column order, because those are what ``ml/train.py`` fits the shipped pickles
+# against. Anything the backend re-typed from them would be a second opinion about the
+# same contract, and the model is the last thing that would complain about a
+# disagreement — it does not fail on a wrong column order, it answers confidently and
+# wrongly. So they are imported, never restated.
+#
+# Loaded by path rather than as a package: ``ml/`` is not one (no ``__init__.py``, not
+# on the backend's import path) and has to stay runnable on its own as
+# ``python ml/train.py``. ``backend/app/ml/forecast.py`` reaches it the same way and
+# for the same reason; its loader cannot be reused from here, because ``app.ml``'s
+# package init imports ``app.ml.client``, which imports this module — asking
+# ``app.ml.forecast`` for the loader would close that ring during startup.
+_ML_DIR = Path(__file__).resolve().parents[2] / "ml"
+
+
+@functools.lru_cache(maxsize=1)
+def load_features_module():
+    """``ml/features.py`` — the one declaration of every model input contract.
+
+    Public because ``app.ml.client`` needs the same module object and must not open
+    a second route to it: two loaders would be two chances to end up looking at two
+    different files.
+    """
+    if str(_ML_DIR) not in sys.path:
+        sys.path.insert(0, str(_ML_DIR))
+    import features  # type: ignore
+
+    return features
+
+
+_features = load_features_module()
+
+# The four fault-mode labels, in the order ml/train.py fitted them.
+LABELS = tuple(_features.DIAGNOSTIC_CLASSES)
 
 _KINDS: list[AssetKind] = ["excavator", "dozer", "haul_truck", "crane", "grader", "loader"]
 _KIND_PREFIX = {
@@ -75,8 +113,15 @@ _SITE_AREAS: tuple[tuple[str, float, float], ...] = (
 _SITES = [name for name, _, _ in _SITE_AREAS]
 
 # Kilometres per degree at the latitude of the site, for the nearest-centre test.
+# The latitude is ``nac.base.SITE_CENTER[0]``, written out rather than imported: a
+# module-level ``from .nac.base import ...`` runs ``app.nac``'s package init, which
+# pulls in the mock client, which imports this module (see ``_starts_on_site``, which
+# imports it inside the function for exactly that reason). It only sets the east-west
+# scale of the Voronoi metric, so it is insensitive to a few hundredths of a degree —
+# but backend/tests/test_no_duplicate_contracts.py pins it to SITE_CENTER anyway.
+_SITE_LATITUDE = 27.5581
 _KM_PER_LAT = 111.32
-_KM_PER_LON = 111.32 * math.cos(math.radians(27.5581))
+_KM_PER_LON = 111.32 * math.cos(math.radians(_SITE_LATITUDE))
 
 
 def site_for(latitude: float, longitude: float) -> str:
@@ -94,13 +139,13 @@ def site_for(latitude: float, longitude: float) -> str:
         ),
     )[0]
 
-# What each failing component needs on the truck.
-COMPONENT_PARTS: dict[str, tuple[str, int]] = {
-    "hydraulic_pump": ("HYD-PUMP-40L", 3),
-    "cooling_system": ("RADIATOR-CORE-XL", 2),
-    "main_bearing": ("BEARING-SET-90", 4),
-    "alternator": ("ALTERNATOR-24V", 1),
-}
+# What each failing component needs on the truck. Its keys ARE the component model's
+# label set — ``ml/features.py`` derives ``COMPONENT_CLASSES`` from this very dict and
+# ``ml/train.py`` fits against that — so the mapping is declared there and imported
+# here. A part keyed on a name the model can never emit is a work order that never
+# gets written, and nothing would raise: ``client.py`` simply falls through its
+# ``if component in COMPONENT_PARTS`` and dispatches the generic kit instead.
+COMPONENT_PARTS: dict[str, tuple[str, int]] = _features.COMPONENT_PARTS
 
 # Fallback by fault mode, for when the component model has nothing to go on. A
 # sensor fault needs no component diagnosis — the sensor is the fault — and a

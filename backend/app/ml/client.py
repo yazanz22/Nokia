@@ -12,19 +12,24 @@ import logging
 
 from ..config import MODEL_PATH
 from ..models import FaultPrediction, TelemetrySample
-from ..seed import COMPONENT_PARTS, PARTS_CATALOGUE
+from ..seed import COMPONENT_PARTS, PARTS_CATALOGUE, load_features_module
 
 log = logging.getLogger("ml")
 
-# Feature order shared with ml/train.py
-FEATURES = [
-    "telemetry_age_sec",
-    "signal_strength_dbm",
-    "neighbor_fail_count",
-    "engine_temp_c",
-    "reachable",
-]
-CLASSES = ["NORMAL", "NETWORK_OUTAGE", "DEVICE_FAILURE", "SENSOR_FAILURE"]
+# The diagnostic contract, taken from the one place it is declared: ``ml/features.py``,
+# which is what ``ml/train.py`` fitted ``model.pkl`` against.
+#
+# Column ORDER is the contract, and it is the dangerous half. A model handed its five
+# features in a different order does not raise, does not warn and does not score badly
+# enough to notice — it answers confidently and wrongly, and every downstream sentence
+# the agent narrates is built on that answer. Re-typing the list here was two
+# declarations of one contract with nothing comparing them; now the row this module
+# feeds the model is built by the *training-side* builder rather than by a second
+# implementation of it.
+_features = load_features_module()
+
+FEATURES = _features.DIAGNOSTIC_FEATURES
+CLASSES = _features.DIAGNOSTIC_CLASSES
 
 _RATIONALE = {
     "NORMAL": "All monitored channels within nominal bands.",
@@ -47,13 +52,15 @@ def _pct(v: float) -> str:
 
 
 def features_from(sample: TelemetrySample) -> list[float]:
-    return [
-        float(sample.telemetry_age_sec),
-        float(sample.signal_strength_dbm),
-        float(sample.neighbor_fail_count),
-        float(sample.engine_temp_c),
-        1.0 if sample.reachable else 0.0,
-    ]
+    """One live reading as a model input row, in ``FEATURES`` order.
+
+    The row is assembled by ``ml/features.py::diagnostic_features`` — the same
+    function that built every row the model was trained on — so serving cannot drift
+    from training by a reordered column or a differently-coerced boolean. All this
+    adds is the shape conversion: training reads CSV dicts, serving holds a
+    ``TelemetrySample``.
+    """
+    return _features.diagnostic_features(sample.model_dump())
 
 
 class FaultModel:
@@ -83,7 +90,7 @@ class FaultModel:
         else:
             probs = self._predict_rules(sample)
         mode = max(probs, key=probs.get)
-        part, lead = PARTS_CATALOGUE.get(mode, ("", 0))
+        part, _lead = PARTS_CATALOGUE.get(mode, ("", 0))
         component = ""
         comp_conf = 0.0
         rationale = _RATIONALE[mode]
@@ -119,7 +126,7 @@ class FaultModel:
             else:
                 component, comp_conf = found
                 if component in COMPONENT_PARTS:
-                    part, lead = COMPONENT_PARTS[component]
+                    part, _lead = COMPONENT_PARTS[component]
                     rationale = (
                         f"{rationale} Recent history points to the "
                         f"{component.replace('_', ' ')} "
@@ -135,7 +142,6 @@ class FaultModel:
             recommended_part=part,
             component=component,
             component_confidence=round(comp_conf, 3),
-            lead_days=lead,
             rationale=rationale,
         )
 

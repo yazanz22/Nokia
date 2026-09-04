@@ -173,7 +173,6 @@ class SimulatorEngine:
                         signal_strength_dbm=row["signal_strength_dbm"],
                         neighbor_fail_count=row["neighbor_fail_count"],
                         engine_temp_c=row["engine_temp_c"],
-                        ground_truth=label,
                     )
                 )
         store.set_asset_state(asset_id, "anomaly")
@@ -243,7 +242,6 @@ class SimulatorEngine:
                 signal_strength_dbm=row["signal_strength_dbm"],
                 neighbor_fail_count=row["neighbor_fail_count"],
                 engine_temp_c=row["engine_temp_c"],
-                ground_truth="NORMAL",
             )
             store.record_telemetry(sample)
         # Crews drive between jobs. A stationary technician would make locating

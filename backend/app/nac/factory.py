@@ -179,11 +179,3 @@ def get_live_client() -> NetworkClient | None:
         log.warning("could not init live NaC client: %s", exc)
         _live = None
     return _live
-
-
-def reset_network_client() -> None:
-    global _client, _live, _mock, _live_tried
-    _client = None
-    _live = None
-    _mock = None
-    _live_tried = False

@@ -47,9 +47,6 @@ class TelemetrySample(BaseModel):
     signal_strength_dbm: float = -60.0
     neighbor_fail_count: int = 0
     engine_temp_c: float = 82.0
-    # true label from the dataset row this sample was drawn from — for the
-    # simulator/demo only; the agent never sees it.
-    ground_truth: str | None = None
 
 
 # ── Incidents ───────────────────────────────────────────────────────────────
@@ -70,7 +67,6 @@ IncidentStatus = Literal[
     # route, and an incident that reads "dispatched" when no one is driving anywhere is
     # the one lie this system cannot afford to tell an operator.
     "awaiting_crew",
-    "closed",
 ]
 
 
@@ -110,7 +106,6 @@ class FaultPrediction(BaseModel):
     # does not fill a van; naming the part is what makes it a first-time fix.
     component: str = ""
     component_confidence: float = 0.0
-    lead_days: int = 0
     rationale: str = ""
 
 
@@ -139,7 +134,7 @@ class Technician(BaseModel):
 # named, but the whole crew is already out. It is a distinct status rather than
 # "created" with an empty name because a card that says "assigned" or "dispatched"
 # with a blank technician and a 0-minute ETA is a promise nobody is keeping.
-WorkOrderStatus = Literal["queued", "created", "assigned", "en_route", "completed"]
+WorkOrderStatus = Literal["queued", "created", "assigned", "completed"]
 
 
 class GeofenceAlert(BaseModel):
@@ -158,7 +153,6 @@ class GeofenceAlert(BaseModel):
     distance_km: float = 0.0
     at: datetime = Field(default_factory=utcnow)
     source: str = "mock"
-    acknowledged: bool = False
 
 
 class WorkOrder(BaseModel):

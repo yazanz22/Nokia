@@ -14,21 +14,12 @@ import contextlib
 from collections.abc import AsyncIterator
 from typing import Any
 
+from .config import get_settings
 from .models import WsEvent
-
-# The deployed demo is a single public URL with no authentication, so how many
-# dashboards attach is whatever the internet decides. Each subscriber costs a
-# 1000-slot queue, a full ``store.snapshot()`` at connect time, and a slot in
-# every fan-out for the life of the socket — on a 512MB instance a shared link,
-# a crawler or a reconnect storm holding sockets open is enough to walk the
-# process into the OOM killer. Past this many the bus refuses outright rather
-# than degrading for the people already watching; the dashboard reconnects with
-# backoff, so a refusal is temporary from the client's side.
-MAX_SUBSCRIBERS = 32
 
 
 class SubscriberLimit(RuntimeError):
-    """The bus is already carrying ``MAX_SUBSCRIBERS`` listeners."""
+    """The bus is already carrying as many listeners as it will hold."""
 
 
 # A serialised ``WsEvent`` — what actually goes down the wire.
@@ -59,9 +50,14 @@ class Subscription:
 
 
 class EventBus:
-    def __init__(self, max_subscribers: int = MAX_SUBSCRIBERS) -> None:
+    def __init__(self, max_subscribers: int | None = None) -> None:
+        # The cap is a deployment concern (see Settings.max_ws_subscribers for why it
+        # exists and what it bounds), but it stays a constructor argument so a test can
+        # build a bus of two without touching the environment.
         self._subs: set[Subscription] = set()
-        self._max_subscribers = max_subscribers
+        self._max_subscribers = (
+            get_settings().max_ws_subscribers if max_subscribers is None else max_subscribers
+        )
 
     def subscribe(self) -> Subscription:
         """Attach a listener, or refuse if the bus is full.

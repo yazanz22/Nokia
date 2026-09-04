@@ -1,0 +1,163 @@
+# Runs the backend suite and the dashboard build on every push and pull request.
+#
+# ── Why 3.12 and not 3.14 ───────────────────────────────────────────────────
+# Local dev is on 3.14, but nothing ships on 3.14. The Dockerfile — the only
+# artifact that is ever deployed — is `python:3.12-slim`, and the Render service
+# is that image. CI matches the deployment, so a green run means the thing that
+# gets judged works, not that a laptop works. Both installs read the same lock
+# file, so the two environments differ only in interpreter.
+#
+# ── Why the lock file and not requirements.txt ──────────────────────────────
+# requirements.txt is all `>=` ranges and re-resolves on every run. The committed
+# .pkl models were written by scikit-learn 1.9.0, and an unpickle against a
+# different scikit-learn does NOT raise: app/ml/client.py and app/ml/forecast.py
+# catch it, log at WARNING, and fall back to the rule classifier and
+# "forecasting unavailable". Everything still comes up green with the entire ML
+# story quietly switched off. requirements.lock.txt pins exact versions, which is
+# why the Dockerfile installs from it too — and why the first step below asserts
+# the models really did load.
+#
+# ── No secrets ─────────────────────────────────────────────────────────────
+# Nothing here needs a key and nothing here should ever be given one. The suite is
+# pinned to AGENT_MODE=rule by backend/tests/conftest.py and the LLM tests drive a
+# scripted model, so there is no third-party call to make. Do not add `secrets.*`
+# to this file: a public fork PR would then be running against real credentials.
+#
+# (The other workflow here, keepalive.yml, is opt-in and unrelated — leave it be.)
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch. A push landing on top of an in-flight run makes that run's
+  # answer stale, and the suite is ~7 minutes — no point paying for it twice.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend suite (Python 3.12)
+    runs-on: ubuntu-latest
+    # The suite takes ~7 minutes, most of it deliberate: 0.7s per agent trace step
+    # and 0.6s of simulated latency per mock CAMARA call, so an operator watching
+    # the dashboard can read the reasoning as it happens. 20 leaves room for a slow
+    # runner without letting a genuine hang burn an hour.
+    timeout-minutes: 20
+    env:
+      # Both are already the defaults in app/config.py, and .env is gitignored so a
+      # fresh checkout has no file to read. Stated anyway: if a default ever flips to
+      # llm/live, CI must not be the thing that discovers it by reaching for a key it
+      # does not have.
+      AGENT_MODE: rule
+      NAC_MODE: mock
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock.txt
+
+      - name: Install pinned dependencies
+        run: python -m pip install --disable-pip-version-check -r backend/requirements.lock.txt
+
+      # This step first, before the suite, for two reasons: it is the highest-value
+      # check in the file, and it takes five seconds. A silent unpickle fallback is
+      # the single most likely cause of a dead demo — the app serves happily, the
+      # dashboard's ML chip reads "rule-based", the predictive-maintenance panel
+      # reads "unavailable", and nothing anywhere is red. The suite would not catch
+      # it either: test_fleet_health_cache.py *skips* when forecasting is
+      # unavailable, so a degraded run gets greener, not redder. Assert it directly.
+      - name: Assert the ML models loaded as trained
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import sys
+
+          from app.ml.client import fault_model
+          from app.ml.forecast import forecast_model
+          from app.seed import build_demo_fleet
+
+          fleet = [a.id for a in build_demo_fleet()]
+          scored = forecast_model.score_fleet(fleet)
+          component = next(
+              (c for aid in fleet if (c := forecast_model.identify_component(aid)) is not None),
+              None,
+          )
+
+          print(f"fault classifier backend : {fault_model.backend}")
+          print(f"forecast available       : {forecast_model.available}")
+          print(f"demo fleet scored        : {len(scored)}/{len(fleet)} assets")
+          print(f"component identification : {component}")
+
+          problems = []
+          if fault_model.backend != "trained":
+              problems.append(
+                  f"ml/model.pkl did not load - classifier fell back to {fault_model.backend!r}"
+              )
+          if not forecast_model.available:
+              problems.append("ml/forecast_model.pkl did not load - forecasting unavailable")
+          if not scored:
+              problems.append("forecast model scored no assets in the demo fleet")
+          if component is None:
+              problems.append("ml/component_model.pkl did not load - no component identification")
+
+          if problems:
+              for p in problems:
+                  print(f"::error::{p}")
+              print(
+                  "\nThe models load through a try/except that degrades silently, so this is the"
+                  "\nonly place it shows up. Almost always a dependency drift: check that the"
+                  "\nscikit-learn installed here matches the one that wrote the .pkl files"
+                  "\n(requirements.lock.txt), or retrain with `python ml/train.py`."
+              )
+              sys.exit(1)
+
+          print("\nall three models loaded as trained")
+          PY
+
+      - name: Run the test suite
+        working-directory: backend
+        # conftest.py puts backend/ on sys.path itself, but only once pytest has
+        # imported it — running from backend/ is what makes `app` importable for
+        # collection in the first place. pytest.ini's testpaths=tests is relative to
+        # this directory too.
+        run: python -m pytest -q
+
+  frontend:
+    name: Dashboard build (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Dockerfile's `node:20-slim` builder stage, for the same
+          # reason the backend job matches its base image.
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # `npm run build` is `tsc -b && vite build`. Split so the log says which half
+      # broke: a type error and a bundler error want different people looking.
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc -b
+
+      - name: Build
+        working-directory: frontend
+        run: npx vite build

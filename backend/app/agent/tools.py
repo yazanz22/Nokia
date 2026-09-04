@@ -7,13 +7,18 @@ logic here means both agent modes take *exactly* the same actions.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from ..models import FaultPrediction, TelemetrySample, Technician, WorkOrder, utcnow
 from ..nac import DeviceLocation, NetworkClient, Reachability, get_network_client
+# One haversine for the whole backend. It lives in nac/base.py beside SITE_CENTER,
+# where the geofence, the simulator and the seed already measure with it; dispatch
+# distances have to come out of the same function as perimeter distances or the map
+# and the work order can disagree about what a kilometre is. Bound under the
+# module-private name the dispatch code below reads with.
+from ..nac.base import haversine_km as _haversine_km
 from ..nac.factory import get_simulated_client
 from ..ml.client import fault_model
 from ..store import store
@@ -338,18 +343,16 @@ def clear_rechecks() -> None:
 
 
 def notify_operator(asset_id: str, message: str) -> str:
-    # In production this fans out to the ops channel / PagerDuty. For the demo the
-    # dashboard incident feed is the notification surface.
-    return f"Operator notified: {message}"
+    """Raise a ticket with the humans, without sending anyone into the desert.
 
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlmb = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
+    In production this fans out to the ops channel / PagerDuty; here the dashboard
+    incident feed is the notification surface, so the honest thing this returns is the
+    line the operator sees. Both agents call it on the roaming branch and use the
+    result as the trace step's observation — the step is labelled with this tool's
+    name, and a trace that names a tool it did not invoke is a trace that cannot be
+    trusted on the steps where it matters.
+    """
+    return f"Operator notified — {asset_id}: {message}"
 
 
 async def locate_crew(technicians: list[Technician]) -> str:

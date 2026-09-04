@@ -13,7 +13,6 @@ const LABEL: Record<string, string> = {
   // Diagnosed and raised, but the whole crew is on jobs — the work order is queued
   // and nobody is en route. Says so plainly rather than borrowing "dispatched".
   awaiting_crew: "queued · nobody free",
-  closed: "closed",
 };
 
 export function IncidentFeed({

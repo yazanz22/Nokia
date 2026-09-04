@@ -3,6 +3,8 @@
 **Dynamic IoT Asset Analytics for Giga-Projects** — Team FILO, MENA Open Gateway Hackathon (GSMA MENA Ignite).
 Theme 2: *Smart Cities, Urban Safety & Mega-Project Infrastructure*.
 
+[![Tests](https://github.com/yazanz22/Nokia/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/yazanz22/Nokia/actions/workflows/tests.yml)
+
 When a piece of heavy equipment on a NEOM-scale site stops sending telemetry, nobody knows whether it
 **broke down**, its **sensor failed**, or it just **drove into a cellular dead zone**. The default is to
 send a field engineer into the desert on a guess — expensive, slow, and often wrong.

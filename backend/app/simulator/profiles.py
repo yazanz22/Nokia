@@ -26,9 +26,6 @@ class AssetProfile:
             self._cycles[label] = shuffled
             self._idx[label] = 0
 
-    def has(self, label: str) -> bool:
-        return bool(self._cycles.get(label))
-
     def next_row(self, label: str) -> dict[str, Any] | None:
         rows = self._cycles.get(label)
         if not rows:

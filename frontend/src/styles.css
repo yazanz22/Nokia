@@ -343,10 +343,6 @@ body {
   flex: 1;
 }
 
-.panel .body.flush {
-  padding: 0;
-}
-
 /* ── empty states: calm and informative, never dead grey text ────────── */
 .empty {
   display: flex;

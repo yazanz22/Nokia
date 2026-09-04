@@ -9,6 +9,10 @@ pydantic>=2.13
 pydantic-settings>=2.15
 python-dotenv>=1.0
 httpx>=0.28
+# starlette 1.6's TestClient prefers httpx2 and falls back to a deprecated httpx path
+# (StarletteDeprecationWarning) when it is missing. The suite leans on TestClient, so a
+# clean install from this file needs it too — it is already in requirements.lock.txt.
+httpx2>=2.12
 
 # AI agent layer (Resource & Tooling Guide §2 Pydantic AI / §3 Groq)
 pydantic-ai-slim[groq]>=2.36

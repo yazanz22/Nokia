@@ -1,6 +1,14 @@
 """Feature builders shared by training (``ml/train.py``) and inference
-(``backend/app/ml/``). Keep the two in lockstep — the column order here *is* the
-model's input contract.
+(``backend/app/ml/``). The column order here *is* the model's input contract.
+
+This module is the SINGLE declaration of that contract, in both directions: training
+imports it directly, and the backend loads this exact file by path
+(``backend/app/seed.py::load_features_module``) rather than restating any of it. That
+is not tidiness. A classifier handed its columns in a different order raises nothing
+and scores nothing obviously wrong — it answers confidently and incorrectly — so two
+copies of ``DIAGNOSTIC_FEATURES`` would be a silent failure waiting on an edit to
+either one. Nothing below may be duplicated on the serving side; import it.
+Enforced by ``backend/tests/test_no_duplicate_contracts.py``.
 
 Two separate feature sets, because there are two separate questions:
 

@@ -18,8 +18,9 @@
 
 The prognostic model is the interesting one, and the headline number is not its
 accuracy — it is the **warning time**. We report it against the obvious baseline
-(an engine-temperature threshold), because temperature is the last signal to move.
-Beating that baseline at long horizons is the entire claim.
+(an engine-temperature threshold, fitted on the training assets only, like the model),
+because temperature is the last signal to move. Beating that baseline at long horizons
+is the entire claim.
 
 Splits are **by asset**, never by row: two readings from the same machine hours
 apart are near-duplicates, so a row-wise split would leak and flatter the model.
@@ -177,8 +178,20 @@ def _temperature_baseline(df: pd.DataFrame, X_assets: np.ndarray) -> np.ndarray:
 
     Threshold chosen as the 97.5th percentile of healthy readings, i.e. tuned to be
     as generous as it can be without alarming constantly.
+
+    Fitted on the **training assets only**, from the same by-asset split the model is
+    held to. It used to be fitted on every row, which handed the baseline a look at the
+    held-out machines — the direction favoured the baseline rather than us, so the
+    warning-time claim was never inflated by it, but a baseline tuned on the rows it is
+    then scored on is not a baseline whichever way the number lands. Correcting it moves
+    the threshold by 0.02 C and no detection rate at all.
+
+    The split is re-derived here from ``X_assets`` rather than passed in, so both callers
+    — this file and ``ml/baselines.py``, which imports this function — get the same
+    discipline without having to remember. Same seed, same input array, same split.
     """
-    healthy = df[df["will_fail_72h"] == 0]["engine_temp_c"]
+    train_ids, _ = _split_assets(X_assets.tolist())
+    healthy = df[(df["will_fail_72h"] == 0) & df["device_id"].isin(train_ids)]["engine_temp_c"]
     return np.full(len(X_assets), float(np.percentile(healthy, 97.5)))
 
 
@@ -226,25 +239,28 @@ def train_prognostic() -> dict:
     # engine_temp "last" is the 16th prognostic feature (4th channel, 1st stat)
     temp_last_idx = PROGNOSTIC_FEATURES.index("engine_temp_c_last")
 
-    print(f"\n  Warning time — model vs. a temperature threshold ({temp_thresh:.1f} C)")
+    print(f"\n  Warning time — model vs. a temperature threshold ({temp_thresh:.2f} C,")
+    print("  the 97.5th percentile of healthy readings on the training assets only)")
     print("  " + "-" * 58)
     print(f"  {'hours before failure':>22s}   {'our model':>10s}   {'temp rule':>10s}")
 
     bands = [(120, 96), (96, 72), (72, 48), (48, 24), (24, 0)]
     detect: dict[str, dict[str, float]] = {}
     for hi, lo in bands:
-        m = te & (htf <= hi) & (htf > lo) & ~np.isnan(htf)
-        if m.sum() == 0:
+        # One set of windows, addressed in two index spaces because the two arrays are
+        # different lengths: `proba` holds only the held-out rows, so the model's rate
+        # needs a test-local mask, while `X` is the full matrix, so the temperature rule
+        # needs global row numbers. Both are cut from the same `in_band`, so they select
+        # the same windows by construction and cannot drift apart.
+        # A window with no failure ahead of it has htf = NaN, and NaN compares False to
+        # both bounds, so those drop out here without a separate isnan guard.
+        in_band = (htf <= hi) & (htf > lo)
+        idx = np.where(te & in_band)[0]  # global rows, for indexing X
+        if len(idx) == 0:
             continue
-        ours = float((proba[m[te]] >= 0.5).mean()) if m[te].size else 0.0
-        # recompute on the test subset properly
-        sub = np.isnan(htf) == False  # noqa: E712
-        idx = np.where(te & sub & (htf <= hi) & (htf > lo))[0]
-        te_idx = np.where(te)[0]
-        pos = np.searchsorted(te_idx, idx)
-        pos = pos[(pos < len(te_idx))]
-        ours = float((proba[pos] >= 0.5).mean()) if len(pos) else 0.0
-        temp_hit = float((X[idx, temp_last_idx] >= temp_thresh).mean()) if len(idx) else 0.0
+        band = in_band[te]  # the same rows, as positions within proba
+        ours = float((proba[band] >= 0.5).mean())
+        temp_hit = float((X[idx, temp_last_idx] >= temp_thresh).mean())
         print(f"  {f'{lo}-{hi}h':>22s}   {ours:>9.0%}   {temp_hit:>10.0%}")
         detect[f"{lo}-{hi}h"] = {
             "model_detection_rate": round(ours, 4),
