@@ -1,6 +1,6 @@
 # Live Demo Script — FILO Asset Sentinel
 
-Phase 2 demo, MENA Open Gateway Hackathon. **Target: 5:40.** Two people: a **driver** (laptop) and a
+Phase 2 demo, MENA Open Gateway Hackathon. **Target: 6:00.** Two people: a **driver** (laptop) and a
 **narrator** (speaks). Never the same person.
 
 Four things to land, in this order: **we don't send trucks we don't need to** (blind spot), **silence
@@ -71,7 +71,9 @@ pwsh scripts/dev.ps1
 curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 ```
 
-- [ ] KPI bar reads `100.0%` / `30/30` / all zeros
+- [ ] KPI bar reads `100.0%` / `30/30` / all zeros — including **Incidents prevented**
+- [ ] The **site perimeter** ring is drawn on the map. The geofence beat is meaningless without a
+      visible boundary, and every asset starts inside it (furthest is 74.9 km of an 80 km radius)
 - [ ] `EQ-0295` selected in the dropdown, ready for the first click
 - [ ] Notifications off, Do Not Disturb on, Slack and mail closed
 
@@ -152,8 +154,9 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 ## 1:45 – 2:20 · Scenario B — the cause nobody thinks of
 
-> **CUT THIS FIRST if you're running long.** It's the most original beat in the demo, but Scenario C
-> is the one that closes the loop.
+> **CUT THIS FIRST if you're running long.** The geofence beat at 4:20 now tells the border story
+> better — it *prevents* the crossing rather than explaining it afterwards — so this one is the
+> cheapest thirty-five seconds to give back. Scenario C is the one that closes the loop; keep that.
 
 **Driver:** select `EQ-0051`. **Confirm the button reads `EQ-0051`.** Click **Crossed the border
 (roaming)**.
@@ -266,7 +269,43 @@ map, then move the cursor to the **Asset telemetry** panel bottom-left.
 
 ---
 
-## 4:20 – 4:40 · Proof the network layer is real
+## 4:20 – 4:55 · The incident that never happens
+
+> **Stagecraft:** click this button at the *start* of the predictive beat above, then narrate
+> predictive while the machine drives. It takes ~35 s to reach the perimeter, and you do not want to
+> stand and watch it.
+
+**Driver:** select a healthy asset, confirm the button reads it, click **Leaving the site
+(geofence)**. Come back to the map now — it should be out near the western edge, or crossing.
+
+> "One last machine. Nothing is wrong with this one — watch it. Engine fine, telemetry streaming,
+> every channel nominal. It's just driving west.
+>
+> NEOM is on the Gulf of Aqaba. Keep going west and you leave our coverage and pick up an Egyptian
+> network — and the moment that happens, this machine goes dark and becomes the incident you saw me
+> investigate four minutes ago."
+
+*(the asset crosses the perimeter; a blue alert appears)*
+
+> "Except it doesn't. We registered the site perimeter with the operator as a **geofence**, and the
+> network told us the moment it crossed — no polling, no waiting for silence.
+>
+> Look at what the alert says: **perimeter, no fault.** The machine is still healthy, still
+> reporting. It hasn't broken and it hasn't gone quiet. Somebody has been told while there's still
+> time to turn it around, or hand it to the connectivity team before it drops off.
+>
+> Everything else I've shown you explains a silence after it happens. This one means the silence
+> never happens."
+
+**Driver:** point at the KPI **Incidents prevented: 1** — a separate counter from false dispatches
+avoided.
+
+> "And that's why it's counted separately. An avoided dispatch means we correctly decided not to send
+> anyone to a failure. This means there *was* no failure."
+
+---
+
+## 4:55 – 5:15 · Proof the network layer is real
 
 **Driver:** if the **Network as Code** panel is minimised, click **+** to open it, then click **Run
 live CAMARA check**.
@@ -283,7 +322,7 @@ live CAMARA check**.
 
 ---
 
-## 4:40 – 5:00 · The numbers, and how it works
+## 5:15 – 5:35 · The numbers, and how it works
 
 **Driver:** point at the KPI bar — **2 false dispatches avoided · 1 dispatch issued**.
 
@@ -300,7 +339,7 @@ live CAMARA check**.
 
 ---
 
-## 5:00 – 5:20 · Close
+## 5:35 – 5:55 · Close
 
 > "One more thing it does: it remembers. Every resolution is recorded against the asset and a
 > two-kilometre map cell. When a second and third silence in the same cell turns out to be coverage,
@@ -326,6 +365,7 @@ live CAMARA check**.
 | Reset clicked mid-investigation | Safe. Anything in flight is abandoned rather than landing on the fresh fleet. |
 | Machine turns green mid-narration | The work order auto-completed at 90 s. Expected. Say *"and there's the loop closing — machine back in service."* |
 | Clicking a machine seems not to select | A brand-new incident takes the view once, by design, so the trace follows a machine going dark. Click again once the trace has landed. |
+| Geofenced machine hasn't crossed yet | It needs ~35 s of driving. Keep narrating; it crosses on its own. Injecting again is refused with a 409. |
 | No dashed rings on the map | The forecast fetch failed or the model is untrained. Check `ml_backend` is `trained` in `/api/debug/health`; the reactive scenarios still work without it. |
 | Work order in the way | **Delete** on the card removes it and releases the technician. **Mark complete** closes it properly. |
 | Agent says "known dead zone" in Scenario A | Rehearsal memory. True and defensible — lean into it, or reset with `?clear_memory=true`. |

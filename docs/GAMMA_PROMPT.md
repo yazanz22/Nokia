@@ -88,8 +88,8 @@ CARD 1 — TITLE
 FILO Asset Sentinel
 Autonomous fleet diagnostics for giga-projects
 Team FILO · Theme 2: Smart Cities, Urban Safety & Mega-Project Infrastructure
-Powered by CAMARA Device Reachability Status, Device Roaming Status and Location Retrieval,
-via Nokia Network as Code
+Powered by CAMARA Device Reachability Status, Device Roaming Status, Congestion Insights,
+Location Retrieval and Geofencing Subscriptions, via Nokia Network as Code
 
 CARD 2 — THE PROBLEM
 A silent machine cannot tell you why it is silent.
@@ -157,7 +157,7 @@ Jordanian networks. Border roaming is a real event on this site, not a hypotheti
 and it is invisible to every on-board sensor.
 
 CARD 8 — THE CAMARA APIS
-Three API families. Four network signals. Five calls per incident.
+Four API families. Five network signals. Four we ask, one asks us.
 1. Device Reachability Status — the truth layer. The authoritative answer to "is this
    device still on the network?" the moment telemetry stops. It converts an ambiguous
    silence into a decision.
@@ -173,7 +173,13 @@ Three API families. Four network signals. Five calls per incident.
    area instead of the device, which is why it still answers when the device has gone
    silent: a machine that goes quiet into a cell the operator already reports as
    congested is a network failing, not a machine failing.
-4. Location Retrieval — used twice, for two different questions. Once for the silent
+4. Geofencing Subscriptions — the only one that runs the other way. Everything else
+   here starts with a machine that has already gone quiet. This registers the site
+   perimeter with the operator, and the network pushes an event the moment an asset
+   crosses it — so the warning arrives while the machine is still healthy and still
+   reporting, before it drives into foreign coverage and goes dark. Diagnosing a
+   silence versus preventing one.
+5. Location Retrieval — used twice, for two different questions. Once for the silent
    machine, whose own GPS is dark or untrustworthy. Once for the crew: a technician's
    phone is a device on the same network, so the same call answers who is genuinely
    nearest right now, not who the roster listed this morning.

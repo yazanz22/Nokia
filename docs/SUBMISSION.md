@@ -74,10 +74,20 @@ network failing; low congestion clears the network and sharpens the hardware ver
 Where both sources exist the device-specific radio metrics win, because congestion only
 ever describes the neighbourhood.
 
-So the agent orchestrates three CAMARA API families across four distinct network
-signals — Device Reachability Status, Device Roaming Status, Congestion Insights and
-Location Retrieval — and makes five network calls per hardware incident, deciding for
-itself which to make and in what order.
+A fifth signal runs the other way. Everything above starts with a machine that has
+already gone quiet; CAMARA Geofencing Subscriptions is how one stops going quiet in
+the first place. The site perimeter is registered with the operator, and the network
+pushes an event the moment an asset crosses it — no polling, and critically the
+warning arrives while the machine is still healthy and still reporting. On a site
+kilometres from Egyptian and Jordanian networks, that is the difference between
+diagnosing a silence and preventing one. We count those separately as incidents
+prevented, because nothing failed.
+
+So the agent orchestrates four CAMARA API families across five distinct network
+signals — Device Reachability Status, Device Roaming Status, Congestion Insights,
+Location Retrieval and Geofencing Subscriptions. It makes five calls per hardware
+incident, deciding for itself which to make and in what order, and holds one standing
+subscription that calls us.
 
 Alongside this, a forecasting model scores the whole fleet continuously for machines
 heading toward failure. Bearing wear lifts vibration and oil-particle count days
