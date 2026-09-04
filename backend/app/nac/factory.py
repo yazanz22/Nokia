@@ -34,6 +34,21 @@ class FallbackNaCClient:
             self.last_source = "mock"
             return await self._mock.get_reachability(asset_id)
 
+    # Geofence events are about the *simulated fleet*, whose assets are not devices on
+    # the sandbox — so there is nothing live to ask, in either mode, and these delegate
+    # to the mock. Without them the wrapper simply lacks the attribute, and the tick's
+    # getattr check quietly finds nothing: geofencing would disappear the moment
+    # NAC_MODE=live, with no error anywhere. The genuine subscription against the
+    # operator is a separate call, exercised by the live-check panel.
+    def collect_geofence_events(self, subjects: list):
+        collect = getattr(self._mock, "collect_geofence_events", None)
+        return collect(subjects) if callable(collect) else []
+
+    def reset_geofence(self) -> None:
+        reset = getattr(self._mock, "reset_geofence", None)
+        if callable(reset):
+            reset()
+
     async def get_location(self, asset_id: str) -> DeviceLocation:
         try:
             loc = await self._live.get_location(asset_id)

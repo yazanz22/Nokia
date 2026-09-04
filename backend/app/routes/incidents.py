@@ -29,3 +29,19 @@ def get_incident(incident_id: str) -> dict:
             if w.incident_id == incident_id
         ],
     }
+
+
+@router.get("/geofence-alerts")
+def list_geofence_alerts() -> dict:
+    """Perimeter crossings — machines that left the site while still healthy.
+
+    Separate from /incidents on purpose. An incident is something that already went
+    wrong; these are the ones that did not.
+    """
+    return {
+        "geofence_alerts": [
+            a.model_dump(mode="json")
+            for a in sorted(store.geofence_alerts.values(), key=lambda a: a.at, reverse=True)
+        ],
+        "incidents_prevented": store.incidents_prevented,
+    }

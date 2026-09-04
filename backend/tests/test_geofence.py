@@ -91,3 +91,49 @@ async def test_drift_scenario_never_silences_the_machine():
     assert not simulator.is_silent(asset_id)
     assert simulator.pending_label(asset_id) is None
     assert store.assets[asset_id].state == "healthy"
+
+
+def test_live_mode_still_delivers_geofence_events():
+    """The fleet is simulated in both modes, so crossings must survive NAC_MODE=live.
+
+    The wrapper used in live mode is a different class; when it simply lacked these
+    methods the simulator's getattr check found nothing and geofencing vanished with
+    no error anywhere — the same silent-in-live-mode failure that has bitten this
+    codebase before.
+    """
+    from app.nac.factory import FallbackNaCClient
+
+    client = FallbackNaCClient(live=MockNaCClient(), mock=MockNaCClient())
+    assert callable(getattr(client, "collect_geofence_events", None))
+    assert callable(getattr(client, "reset_geofence", None))
+
+    asset_id = sorted(store.assets)[0]
+    client.collect_geofence_events(list(store.assets.values()))
+    _walk_out(asset_id)
+    events = client.collect_geofence_events(list(store.assets.values()))
+    assert [e.asset_id for e in events] == [asset_id]
+
+
+def test_the_drift_stops_instead_of_running_off_the_map():
+    """The projection fits its bounds to every asset.
+
+    A machine that kept driving put itself 240 km out against a 119 km site, which
+    rescales the map until the site is a smudge — on the frame the demo script leaves
+    up while it closes.
+    """
+    from app.simulator.engine import DRIFT_STEP_DEG, DRIFT_STOP_KM
+
+    asset_id = sorted(store.assets)[2]
+    asset = store.assets[asset_id]
+    simulator.inject(asset_id, "offsite")
+
+    for _ in range(400):
+        if asset_id not in simulator._drifting:
+            break
+        asset.longitude -= DRIFT_STEP_DEG
+        if haversine_km(asset.latitude, asset.longitude, *SITE_CENTER) > SITE_RADIUS_KM + DRIFT_STOP_KM:
+            simulator._drifting.discard(asset_id)
+
+    out = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
+    assert out > SITE_RADIUS_KM, "must actually leave the site"
+    assert out < SITE_RADIUS_KM + DRIFT_STOP_KM + 10, f"ran away to {out:.0f} km"

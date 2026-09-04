@@ -16,6 +16,7 @@ from datetime import timedelta
 
 from ..config import get_settings
 from ..nac import get_network_client
+from ..nac.base import SITE_CENTER, SITE_RADIUS_KM, haversine_km
 from ..models import TelemetrySample, utcnow
 from ..ratelimit import inject_limiter, live_check_limiter
 from ..store import store
@@ -42,6 +43,11 @@ DRIFT_SCENARIO = "offsite"
 # enough to narrate over. At 1.4 km a tick it took nearly two minutes, which is dead
 # air in a five-minute demo.
 DRIFT_STEP_DEG = 0.05
+# Stop this far past the perimeter. A machine that has left the site has made the
+# point, and one that keeps driving quietly wrecks the map: the projection fits its
+# bounds to every asset, so a runaway dot 240 km out rescales a 119 km site into a
+# smudge — and the demo script leaves that frame on screen while it closes.
+DRIFT_STOP_KM = 12.0
 
 
 def _reset_geofence_state() -> None:
@@ -165,6 +171,9 @@ class SimulatorEngine:
                     # Heading west, across the Gulf toward Egyptian coverage.
                     asset.longitude -= DRIFT_STEP_DEG
                     asset.latitude += self._rng.uniform(-0.0004, 0.0004)
+                    out_km = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
+                    if out_km > SITE_RADIUS_KM + DRIFT_STOP_KM:
+                        self._drifting.discard(asset_id)
                 else:
                     # Gentle positional drift so the map feels alive.
                     asset.latitude += self._rng.uniform(-0.0008, 0.0008)
