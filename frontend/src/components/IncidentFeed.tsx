@@ -6,6 +6,9 @@ const LABEL: Record<string, string> = {
   network_blindspot: "blind spot · no dispatch",
   no_fault: "no fault · no dispatch",
   roaming_blocked: "roaming · no dispatch",
+  // Two dispatch outcomes, deliberately distinct: a sensor kit on a working machine is
+  // not the same event as a mechanic and a heavy component.
+  sensor_confirmed: "sensor · dispatched",
   hardware_confirmed: "hardware · dispatched",
   closed: "closed",
 };

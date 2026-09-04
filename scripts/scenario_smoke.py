@@ -4,6 +4,7 @@ Runs both demo scenarios through the real anomaly detector + agent (rule mode,
 mock Network-as-Code) and asserts the terminal state:
 
     blindspot -> incident 'network_blindspot', NO work order, asset 'blindspot'
+    sensor    -> incident 'sensor_confirmed', 1 work order w/ the cheap kit, asset 'dispatched'
     hardware  -> incident 'hardware_confirmed', 1 work order w/ technician, asset 'dispatched'
 
 Usage:  python scripts/scenario_smoke.py        (exits non-zero on failure)
@@ -48,6 +49,17 @@ async def run_one(scenario: str) -> tuple[bool, str]:
             and len(wos) == 0
             and store.false_dispatches_avoided == 1
         )
+    elif scenario == "sensor":
+        # The cheap dispatch. It is a *different* outcome from a hardware fault — the
+        # machine is fine and only its reporting sensor failed — so the smoke test
+        # checks the status and the part, not just that somebody was sent.
+        ok = (
+            inc.status == "sensor_confirmed"
+            and asset.state == "dispatched"
+            and len(wos) == 1
+            and wos[0].technician_id is not None
+            and wos[0].part == "TELEMETRY-SENSOR-KIT"
+        )
     else:  # hardware
         ok = (
             inc.status == "hardware_confirmed"
@@ -72,7 +84,7 @@ async def main() -> int:
         print(f"LLM_MODEL={settings.llm_model}")
 
     rc = 0
-    for scenario in ("blindspot", "hardware"):
+    for scenario in ("blindspot", "sensor", "hardware"):
         ok, detail = await run_one(scenario)
         print(("PASS " if ok else "FAIL ") + detail)
         if not ok:

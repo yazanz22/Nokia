@@ -149,14 +149,39 @@ class Store:
     def next_work_order_id(self) -> str:
         return f"WO-{next(self._wo_seq):04d}"
 
+    def claim_technician(self, tech: Technician) -> bool:
+        """Take a technician off the board. False means somebody else got there first.
+
+        Availability used to be flipped down in ``add_work_order``, which is the last
+        line of a dispatch rather than the first — and by then it is far too late.
+        ``create_work_order`` reads the free crew, then spends ~3.6s asking CAMARA
+        Location Retrieval where each of them is, and only then decides who goes. Two
+        investigations overlapping in that window both read the same free list and both
+        picked the same nearest name: ``WO-0002 EQ-0008 -> Ziad Khalifeh`` and
+        ``WO-0003 EQ-0022 -> Ziad Khalifeh``, 90 km one way and 33 km the other. Two
+        clicks a few seconds apart is all it takes — that is inside the 4/min rate limit,
+        so nothing upstream stops it either.
+
+        The test-and-set here is what actually decides it. It is synchronous, so the
+        event loop cannot interleave the check and the flip, and exactly one caller can
+        win. Callers must select from the *currently* available crew and claim in the
+        same synchronous block — see ``create_work_order``. Same shape, and the same
+        reason, as ``_claim_terminal`` in ``agent/agent.py``: that one stops one incident
+        being resolved twice, this one stops two incidents booking one technician.
+        """
+        if not tech.available:
+            return False
+        tech.available = False
+        self.publish_technicians()
+        return True
+
     def add_work_order(self, wo: WorkOrder) -> None:
+        # No availability flip here on purpose. The technician was claimed by
+        # `create_work_order` the instant it chose them, before the work order existed;
+        # claiming again at this point would be a second source of truth for the same
+        # fact, and the one that arrives too late to prevent anything.
         self.work_orders[wo.id] = wo
         self.dispatches_issued += 1
-        if wo.technician_id:
-            tech = self.technicians.get(wo.technician_id)
-            if tech:
-                tech.available = False
-                self.publish_technicians()
         bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
 
     def resume_telemetry(self, asset_id: str) -> None:

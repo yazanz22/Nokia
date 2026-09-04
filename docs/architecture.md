@@ -141,14 +141,14 @@ Rows are evaluated in this order (`assess_silence`, `agent/tools.py`):
 | Observation | Reading | Action |
 |---|---|---|
 | Reachable, **roaming on a foreign network** (country ≠ `SA`) | crossed the site boundary onto another operator; its telemetry APN no longer reaches us | connectivity ticket, **no dispatch** |
-| Reachable on our own network | connectivity is ruled out, so the silence is on the machine | hand to the ML fault model |
+| Reachable on our own network | connectivity is ruled out, so the silence is on the machine | hand to the fault classifier |
 | Unreachable, weak serving cell (≤ −105 dBm), neighbour cells also failing | coverage gap | re-check scheduled, operator notified, **no dispatch** |
-| Unreachable, **strong** serving cell, no neighbour failures | the network is fine here, so the machine died | ML classifies the fault → dispatch |
+| Unreachable, **strong** serving cell, no neighbour failures | the network is fine here, so the machine died | the fault classifier runs → dispatch |
 | Unreachable, **no radio metrics**, operator reports **High** area congestion | the device went quiet into a network already struggling here — coverage failure | re-check, **no dispatch** |
-| Unreachable, **no radio metrics**, operator reports **None/Low** congestion | the area is healthy, so the silence is the equipment | ML classifies the fault → dispatch |
-| Unreachable, congestion **Medium** | decides nothing, and is not made to | hand to the ML fault model |
-| Congestion reading below **50% confidence** | too weak to count either way | stated on the trace, then **ignored** — hand to the ML fault model |
-| Anything else | ambiguous; a wasted check beats a missed breakdown | hand to the ML fault model |
+| Unreachable, **no radio metrics**, operator reports **None/Low** congestion | the area is healthy, so the silence is the equipment | the fault classifier runs → dispatch |
+| Unreachable, congestion **Medium** | decides nothing, and is not made to | hand to the fault classifier |
+| Congestion reading below **50% confidence** | too weak to count either way | stated on the trace, then **ignored** — hand to the fault classifier |
+| Anything else | ambiguous; a wasted check beats a missed breakdown | hand to the fault classifier |
 
 Three rows carry the weight. *Unreachable but with a healthy radio link* is the case a
 naive reachability check gets exactly backwards. *Reachable but roaming* is invisible
@@ -168,7 +168,7 @@ switched on and off:
 | Coverage gap (from the radio metrics, congestion, or the model returning `NETWORK_OUTAGE`) | `network_blindspot` | nobody — re-check queued, operator notified |
 | Roaming onto a foreign network | `roaming_blocked` | nobody — connectivity ticket, 30-min re-check |
 | Model finds every channel nominal | `no_fault` | nobody — transient dropout, telemetry resumed |
-| `SENSOR_FAILURE` | `hardware_confirmed` | a technician with a `TELEMETRY-SENSOR-KIT` — cheap, and the machine is fine |
+| `SENSOR_FAILURE` | `sensor_confirmed` | a technician with a `TELEMETRY-SENSOR-KIT` — cheap, and the machine is fine |
 | `DEVICE_FAILURE` | `hardware_confirmed` | a mechanic with the component-specific part the component model named |
 
 The first three are counted as false dispatches avoided; the last two go through CAMARA
@@ -186,13 +186,19 @@ knowledge (`POST /api/scenarios/reset?clear_memory=true` for a genuinely blank s
 
 ## Where ML earns its place
 
-Not in diagnosis. On this data a single engine-temperature threshold separates
-hardware failure from network outage cleanly, and we say so rather than overclaiming.
+Not in diagnosis, and the concession is sharper than "a threshold would do". The
+hand-written rule in `_predict_rules` (`backend/app/ml/client.py`) and the trained
+`ml/model.pkl` agree on **100% of all 15,000 rows** — zero disagreements — and score an
+identical **95.17%** against the held-out assets. The trained model is not adding
+anything the rule does not already have; it is a *check* that the rule still matches the
+data. We run the rule, because the decision it gates puts a crew in a truck and a site
+manager should be able to read the logic and argue with it. Nothing here is a black box
+because on this question nothing needs to be.
 
 It earns its place in **forecasting**, because the signals that matter arrive in
 physical order. Bearing wear lifts vibration and oil-particle count days out; seals
-let hydraulic pressure sag next; engine temperature — the only channel a threshold
-alarm watches — moves in the final hours.
+let hydraulic pressure sag next; engine temperature — the channel conventional threshold
+alarms actually watch — moves in the final hours.
 
 | Hours before failure | This model | Engine-temp threshold |
 |---|---|---|
@@ -208,6 +214,16 @@ degradation ramp, so nothing was fitted to warn earlier than three days and past
 the threshold is the better of two bad options. Inside the window it was built for,
 the model gives usable warning where the threshold gives roughly one alarm in five.
 Every figure here is `ml/metrics.json`, which is committed — check it.
+
+That baseline is **engine temperature specifically** — the channel fleets alarm on today,
+not the best threshold in our own data. The best is a rate-matched threshold on
+**vibration slope**, feature 4 of the 26 the model already receives, and past 72 hours it
+beats us: **53.7% at 72–96 h against our 7.3%**, median lead **108 h against our 72 h**.
+The cost is the window where dispatch is actually decided — inside 72 hours it catches
+**70–71%** against the model's **93.8–100%**, it alarms on **18 of 24** never-failing
+held-out machines against the model's **0 of 24**, and **89.8%** of its firings land in a
+real degradation ramp against **100%**. Earlier and much noisier. A real fleet would run
+both: the slope rule for a watch-list, the model to commit a truck.
 
 Horizon comes from asking the same question at 24 / 48 / 72 h and reporting the
 tightest one the model clears — never from the label.

@@ -271,15 +271,28 @@ async def run_rule_investigation(incident_id: str) -> None:
     )
 
     store.set_asset_state(asset_id, "dispatched")
-    store.close_incident(
-        inc,
-        status="hardware_confirmed",
-        resolution=(
+    # Both of these send somebody, and that is where the resemblance ends. A failed
+    # reporting sensor leaves a working machine that cannot describe itself — a cheap
+    # kit and a technician. A device failure is the machine itself, and costs a mechanic
+    # and the component the history named. Closing them under one status made the
+    # cheaper of the two outcomes unreadable in the record and on the dashboard.
+    elapsed = (utcnow() - inc.opened_at).total_seconds()
+    if fault.mode == "SENSOR_FAILURE":
+        status = "sensor_confirmed"
+        resolution = (
+            f"Reporting sensor failed, not the machine: {fault.mode} @ {fault.confidence:.0%} — "
+            f"every physical channel reads nominal. No mechanic needed. {wo.id} sends "
+            f"{wo.technician_name} (ETA {wo.eta_minutes} min) with a {wo.part} to replace the "
+            f"telemetry sensor. Diagnosed and dispatched in {elapsed:.0f}s."
+        )
+    else:
+        status = "hardware_confirmed"
+        resolution = (
             f"Hardware fault confirmed: {fault.mode} @ {fault.confidence:.0%}. "
             f"{wo.id} dispatched to {wo.technician_name} (ETA {wo.eta_minutes} min) with {wo.part}. "
-            f"Diagnosed and dispatched in {(utcnow() - inc.opened_at).total_seconds():.0f}s."
-        ),
-    )
-    memory.record(asset_id, asset.latitude, asset.longitude, "hardware_confirmed")
+            f"Diagnosed and dispatched in {elapsed:.0f}s."
+        )
+    store.close_incident(inc, status=status, resolution=resolution)
+    memory.record(asset_id, asset.latitude, asset.longitude, status)
     store.publish_kpis()
-    log.info("%s resolved as hardware_confirmed -> %s", incident_id, wo.id)
+    log.info("%s resolved as %s -> %s", incident_id, status, wo.id)

@@ -50,7 +50,12 @@ def _cell(lat: float, lon: float) -> tuple[int, int]:
 class Episode:
     asset_id: str
     cell: tuple[int, int]
-    category: str            # network_blindspot | roaming_blocked | hardware_confirmed | no_fault
+    # network_blindspot | roaming_blocked | no_fault | sensor_confirmed | hardware_confirmed.
+    # `asset_hardware_failures` counts only the last of those, deliberately: a failed
+    # reporting sensor on a healthy machine is not a hardware failure, and folding the
+    # two together would make a machine that keeps losing sensors look mechanically
+    # unreliable.
+    category: str
     at: datetime = field(default_factory=utcnow)
 
 

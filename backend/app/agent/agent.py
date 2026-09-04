@@ -427,11 +427,17 @@ def _build_agent():
             store.publish_kpis()
             return "no fault found — dispatch withheld"
 
+        # Both remaining modes send somebody, but not the same somebody: a failed
+        # reporting sensor is a cheap kit on a healthy machine, a device failure is a
+        # mechanic with the component the history named. Same rule as the rule agent —
+        # the two agents must not disagree about how an incident is recorded.
+        sensor_fault = getattr(fault, "mode", None) == "SENSOR_FAILURE"
+
         # Claimed before the location lookup and the work order, not after: those are the
         # expensive, externally visible half of a dispatch, and a duplicate call that got
         # this far would raise a second work order and mark a second technician busy long
         # before it reached the store writes below.
-        if not _claim_terminal(d, "dispatch"):
+        if not _claim_terminal(d, "sensor dispatch" if sensor_fault else "dispatch"):
             return _already_resolved_reply(d)
 
         # Claiming before the work is done is what stops a duplicate, but it also means a
@@ -468,20 +474,27 @@ def _build_agent():
             )
             inc = store.incidents[d.incident_id]
             store.set_asset_state(d.asset_id, "dispatched")
-            store.close_incident(
-                inc,
-                status="hardware_confirmed",
-                resolution=(
+            if sensor_fault:
+                status = "sensor_confirmed"
+                resolution = (
+                    f"Reporting sensor failed, not the machine (agent): {fault.mode} @ "  # type: ignore[union-attr]
+                    f"{fault.confidence:.0%}, every physical channel nominal. No mechanic "  # type: ignore[union-attr]
+                    f"needed — {wo.id} -> {wo.technician_name} (ETA {wo.eta_minutes} min) with "
+                    f"a {wo.part} to replace the telemetry sensor."
+                )
+            else:
+                status = "hardware_confirmed"
+                resolution = (
                     f"Hardware fault confirmed (agent): {fault.mode} @ {fault.confidence:.0%}. "  # type: ignore[union-attr]
                     f"{wo.id} -> {wo.technician_name} (ETA {wo.eta_minutes} min) with {wo.part}."
-                ),
-            )
-            _remember(d.asset_id, "hardware_confirmed")
+                )
+            store.close_incident(inc, status=status, resolution=resolution)
+            _remember(d.asset_id, status)
             store.publish_kpis()
         except Exception:
             d.terminal = None
             raise
-        return f"dispatched {wo.id}"
+        return f"dispatched {wo.id}" + (" (sensor kit — the machine is fine)" if sensor_fault else "")
 
     return agent
 

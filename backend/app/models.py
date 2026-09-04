@@ -60,7 +60,11 @@ IncidentStatus = Literal[
     "network_blindspot",     # coverage gap — no dispatch
     "no_fault",              # network fine, but the machine reads healthy — no dispatch
     "roaming_blocked",       # on a foreign network — connectivity ticket, no dispatch
-    "hardware_confirmed",    # real fault — technician dispatched
+    # Two dispatches, not one. A failed reporting sensor on a healthy machine costs a
+    # cheap kit; a broken machine costs a mechanic and a heavy component. Recording both
+    # as "hardware" is what made the graded response invisible in the incident record.
+    "sensor_confirmed",      # reporting sensor failed — technician with a sensor kit
+    "hardware_confirmed",    # real fault — mechanic dispatched with the named part
     "closed",
 ]
 

@@ -48,6 +48,7 @@ export type IncidentStatus =
   | "network_blindspot"
   | "no_fault"
   | "roaming_blocked"
+  | "sensor_confirmed"
   | "hardware_confirmed"
   | "closed";
 

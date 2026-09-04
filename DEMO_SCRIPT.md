@@ -261,7 +261,10 @@ map, then move the cursor to the **Asset telemetry** panel bottom-left.
 > and by then you're not scheduling a repair, you're recovering from a breakdown.
 >
 > On held-out machines, two to three days out: our model catches **93.8%** of failures. A temperature
-> threshold — what fleets actually alarm on today — catches **19.6%**."
+> threshold — what fleets actually alarm on today — catches **19.6%**.
+>
+> Inside three days. Past that we lose — nothing was trained to warn earlier, and the numbers for
+> every horizon are in `ml/metrics.json`, which is in the repo."
 
 > **Read what's on screen, not these numbers.** Vibration, particle counts and the horizon differ per
 > machine and per run. The shape of the story is what's fixed: healthy *and* at risk, with the two
@@ -370,7 +373,7 @@ live CAMARA check**.
 | Work order in the way | **Delete** on the card removes it and releases the technician. **Mark complete** closes it properly. |
 | Agent says "known dead zone" in Scenario A | Rehearsal memory. True and defensible — lean into it, or reset with `?clear_memory=true`. |
 | Trace stalls part-way (LLM mode) | It self-corrects: the agent re-asks for the terminal tool call, and failing that the rule agent finishes the incident. Say nothing and let it land. |
-| LLM slow, rate-limited, or daily cap hit | Say *"switching to our deterministic path"* — set `AGENT_MODE=rule` in `.env`, restart backend. Identical on screen, no model call. |
+| LLM slow, rate-limited, or daily cap hit | **First** swap the model: `LLM_MODEL=groq:qwen/qwen3.8-27b` in `.env`, restart backend. Same trace, same pacing, narration unchanged. **Only if Groq itself is down**, say *"switching to our deterministic path"* and set `AGENT_MODE=rule`: same content on screen, but it finishes in ~5 s instead of ~28 s, so the trace lands before your narration does — cut to the result and talk over the finished panel, don't pace it like the LLM run. |
 | Dashboard shows "reconnecting…" | Backend died. Restart it (below); the dashboard reconnects on its own. |
 | KPIs/state look stale or wrong | **Reset demo**, re-run from Scenario A. |
 | Everything is broken | Cut to the backup video. Do not debug on stage. |
@@ -467,9 +470,21 @@ the part is how you become that statistic.
 Synthetic, and we'll show you the generators. `data/dataset_builder.py` makes the 15,000 diagnostic
 readings; `data/history_builder.py` makes 30 days of continuous per-machine telemetry for the
 forecasting and component models. The honest part: in the diagnostic set `NORMAL` and
-`SENSOR_FAILURE` deliberately overlap, so the model scores **95.2%**, not 100% — it genuinely
-confuses about half the sensor faults with healthy readings, and we know exactly why. What it
-separates cleanly is the decision that actually matters: coverage gap versus hardware failure.
+`SENSOR_FAILURE` deliberately overlap, so nothing scores 100% on it — about half the sensor
+faults are genuinely indistinguishable from healthy readings, and we know exactly why. What
+*is* separated cleanly is the decision that actually matters: coverage gap versus hardware
+failure.
+
+**"Is the diagnostic step actually machine learning?"** — ask this on yourself before a judge does.
+No, and we don't claim it. Diagnosis is a rule you can read in a couple of dozen lines
+(`_predict_rules`). We trained a classifier on the same 15,000 rows and it agrees with that rule
+on **100% of them** — zero disagreements — both scoring the same **95.2%** on held-out assets. So
+95.2% is the rule's number, not a model's. We keep the model as a check that the rule still matches
+the data, and we run the rule because on a call that puts a crew in a truck in the desert, a site
+manager should be able to read the logic and argue with it. The machine learning that earns its
+name is the forecasting model and the component classifier — neither has a rule-shaped
+alternative, and the component one especially: a threshold returns a yes or a no, never a part
+number.
 
 **"Do real machines actually measure vibration and oil particles?"**
 Yes, and it is worth answering precisely because the two are not equally routine.
@@ -497,6 +512,21 @@ we report is **warning time against the obvious baseline**: at two to three days
 93.8% of failures, a temperature threshold flags 19.6%. That gap is a property of the physics we modelled
 — vibration and oil-particle trends lead engine temperature by days — not of the classifier being
 clever. On real fleet data the absolute numbers move; the ordering of those signals doesn't.
+
+**"Why is your baseline engine temperature? Did you try thresholding anything else?"**
+Yes, and this is the answer to volunteer rather than wait for. Temperature is the baseline because
+it is what fleets alarm on *today* — it is the incumbent, not the strongest threshold in our data.
+The strongest is a rate-matched threshold on **vibration slope**, and past 72 hours it beats us:
+**53.7% detection at 72–96 h against our 7.3%**, median lead **108 h against our 72 h**. And that
+slope is feature 4 of the 26 the model already receives, so we can't even call it an unfair
+comparison — it beat us with something we handed it.
+
+What it costs is the window where you actually decide to send a truck. Inside 72 hours that rule
+catches **70–71%** where the model catches **93.8–100%**; it alarms at least once on **18 of the 24
+never-failing machines** in the held-out split, against **0 of 24** for the model; and only **89.8%**
+of its firings land inside a genuine degradation ramp, against **100%**. It is an earlier and far
+noisier smoke detector. The right production answer is both — the slope rule feeds a watch-list, the
+model commits the dispatch — and that is the answer to give, not a defence of the model alone.
 
 **"How do you get 'about three days' from a yes/no classifier?"**
 We don't. We train the same question at 24, 48 and 72 hours and report the tightest horizon that

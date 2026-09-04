@@ -744,6 +744,12 @@ button:focus-visible {
 .incident.hardware_confirmed {
   border-left-color: var(--dispatch);
 }
+/* Also a dispatch, but a cheap one: a sensor kit on a machine that is otherwise fine.
+   Violet keeps it off the amber "truck rolling" register and out of the calm blue
+   no-dispatch group, so the two dispatch outcomes are told apart at a glance. */
+.incident.sensor_confirmed {
+  border-left-color: #b78ee6;
+}
 .incident.investigating,
 .incident.open {
   border-left-color: var(--crit);
@@ -804,6 +810,11 @@ button:focus-visible {
   color: var(--dispatch);
   border-color: #6b4d17;
   background: #241b0c;
+}
+.badge.sensor_confirmed {
+  color: #b78ee6;
+  border-color: #4b3a6b;
+  background: #1a1426;
 }
 .badge.open {
   color: var(--crit);

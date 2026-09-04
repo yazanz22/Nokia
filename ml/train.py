@@ -4,6 +4,15 @@
 
 1. **Diagnostic** (``model.pkl``) — from ``data/dataset1.csv``. One reading in,
    "what broke?" out. Four classes.
+
+   Do not present this one as a machine-learning result. Measured over all 15,000
+   rows, it agrees with the hand-written rule classifier in
+   ``backend/app/ml/client.py::_predict_rules`` on 100.0000% of them — zero
+   disagreements — so the two score an identical 95.17% on the held-out split. The
+   dataset's structure is simply separable by a handful of thresholds. That is a good
+   property for a safety-adjacent decision (the rule is auditable, and the model is a
+   check on it rather than a black box), but the ML contribution in this project is
+   items 2 and 3, which no rule reproduces.
 2. **Prognostic** (``forecast_model.pkl``) — from ``data/telemetry_history.csv``.
    A trailing window of readings in, "will this fail within 72 hours?" out.
 

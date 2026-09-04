@@ -20,7 +20,11 @@ editing the other — that's what keeps the halves looking like one deck.
 
 - Deck A must **not** end with a "thank you" or summary card — card 10 is the last one.
 - Deck B must **not** start with a title or cover card — its card 1 is content.
-- Gamma rounds numbers. Confirm **95.2%** and **88.3%** survived intact.
+- Gamma rounds numbers. Confirm **93.8%**, **88.3%** and **95.2%** survived intact.
+- Deck B card 1 must keep the diagnostic step framed as a *rule* that a model reproduces
+  exactly, not as an ML result. Gamma likes to promote 95.2% to the headline stat because
+  it is the biggest number on the card — if it does, that is precisely the claim a judge
+  can refute from our own repo. Demote it back to third.
 - Deck B card 3 must still read *targets*, not claims.
 - Deck A cards 6, 7 and 9 must be a diagram, a table and a diagram — not three text blocks.
 - Deck A card 8 must name **all three** signals. Gamma likes to compress it back to two
@@ -250,18 +254,22 @@ RULES — IMPORTANT
 ---
 
 CARD 1 — THE MACHINE LEARNING (three prominent stat callouts)
-Three models, each answering a different question.
-- What broke? Diagnostic classifier — 95.2% accuracy, 0.907 macro F1. Ceiling is
-  deliberate: two classes overlap by design in our data, so the model cannot be a
-  suspiciously perfect 100%.
+Three questions, and we are precise about which two need a model.
+- When will it break? Prognostic model — catches 93.8% of failures 48–72 hours ahead,
+  against 19.6% for the engine-temperature threshold fleets alarm on today.
+  (~4.8x, not 47x. Say the horizon out loud: the advantage is inside 72 hours, which is
+  what the models were trained for, and past that the threshold is better.)
 - Which part? Component classifier — 88.3% accuracy, 0.870 macro F1, across four
   components with distinct degradation signatures. This is what turns a work order from
-  "go look at it" into "bring this part".
-- When will it break? Prognostic model — catches 93.8% of failures 48–72 hours ahead,
-  against 19.6% for a conventional engine-temperature threshold on the same data.
-  (~4.8x, not 47x. Say the horizon out loud: the advantage is inside 72 hours, which is
-  what the models were trained for, and past that the threshold is slightly better.)
-Note on the last figure: that is our model on our dataset. The generators are in the repo.
+  "go look at it" into "bring this part". A threshold returns a yes or a no, never a part
+  number — this step has no rule-shaped alternative at all.
+- What broke? Not machine learning, and we say so. Diagnosis is a transparent rule of a
+  couple of dozen lines. A classifier trained on the same 15,000 rows agrees with that
+  rule on 100% of them, both scoring 95.2% on held-out assets — so 95.2% is the rule's
+  number, not a model's. We keep the model as a check on the rule and run the rule,
+  because a decision that sends a crew into the desert should be one a site manager can
+  read and argue with.
+Note on the first figure: that is our model on our dataset. The generators are in the repo.
 
 CARD 2 — THE AGENT LEARNS THE SITE
 Every resolution is recorded against the asset and a ~2 km map cell.

@@ -402,10 +402,26 @@ async def create_work_order(
     available = [t for t in store.technicians.values() if t.available]
     crew_source = await locate_crew(available)
 
+    # ── choose and claim, with no await in between ──────────────────────────────
+    # Everything from here down to `store.claim_technician` is deliberately
+    # synchronous. The list above is ~3.6s stale by the time we get here — locating
+    # the crew is serial and each CAMARA round trip costs 0.6s — which is ample room
+    # for a second investigation to run its own dispatch alongside this one. It did:
+    # two faults injected a few seconds apart produced WO-0002 and WO-0003 both
+    # assigned to Ziad Khalifeh, 90 km one way and 33 km the other, because both runs
+    # decided from a snapshot taken before either had claimed anybody.
+    #
+    # So the free crew is re-read here, at the moment of the decision, and the winner
+    # is taken off the board before the function yields again. Anyone claimed while we
+    # were on the phone to the network simply is not a candidate any more — for the
+    # assignment or for the "someone nearer was skipped" note below, which would
+    # otherwise name a technician who is already driving to a different machine.
+    free = [t for t in available if t.available]
+
     # Nearest available technician who carries the required part.
-    candidates = [t for t in available if not part or part in t.parts_on_hand]
+    candidates = [t for t in free if not part or part in t.parts_on_hand]
     if not candidates:  # relax the part constraint rather than fail to dispatch
-        candidates = available
+        candidates = free
 
     # Someone closer who cannot fix it is not a better answer, but on a map it looks
     # like one. Record the skipped-but-nearer person so the reasoning is visible
@@ -413,7 +429,7 @@ async def create_work_order(
     skipped_closer: Technician | None = None
     skipped_km = 0.0
     if part:
-        for other in available:
+        for other in free:
             if part in other.parts_on_hand:
                 continue
             km = _haversine_km(other.latitude, other.longitude,
@@ -431,6 +447,12 @@ async def create_work_order(
             ),
             key=lambda pair: pair[1],
         )
+        # Claimed here rather than after the work order is built: the store write is
+        # several statements away, and only the first one of these that runs may have
+        # this person. Nothing above yields, so this cannot lose — the return value is
+        # the store's guarantee of that, not a case this caller has to handle.
+        store.claim_technician(tech)
+    # ── end of the critical section ─────────────────────────────────────────────
 
     # Only worth mentioning if they were genuinely nearer than whoever we chose.
     # Otherwise the card would state something untrue.

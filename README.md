@@ -15,7 +15,7 @@ drives anywhere:
    └─▶ CAMARA Device Status + Roaming + Congestion Insights   ── is the network up here?
          ├─ coverage gap    ─▶ log blind spot, re-check, notify operator        ✗ NO DISPATCH
          ├─ roaming abroad  ─▶ connectivity ticket, re-check                    ✗ NO DISPATCH
-         └─ network fine    ─▶ ML fault model
+         └─ network fine    ─▶ fault classifier
                                 ├─ nothing wrong ─▶ transient dropout, re-check ✗ NO DISPATCH
                                 └─ real fault ─▶ CAMARA Location Retrieval ─▶ work order + nearest
                                                  (asset, then crew)             technician w/ the part
@@ -155,10 +155,21 @@ not present them as such.
 
 ## Seeing it coming
 
+First, what the machine learning here is *not*. The diagnosis step — coverage gap vs.
+roaming vs. sensor vs. hardware — is a transparent rule you can read in a couple of dozen
+lines (`_predict_rules` in `backend/app/ml/client.py`). We also trained a gradient-boosted
+classifier on the same 15,000 rows, and it agrees with that rule on **100% of them** —
+zero disagreements, on every row and on the held-out split, where both score the same
+**95.2%**. So that 95.2% is not evidence of a model doing anything: it is the rule's
+number. The model is a *check* that the rule still matches the data, not a black box
+standing in front of a decision that puts people in trucks in the desert — and on that
+particular call we would rather ship something a site manager can read and argue with.
+The real ML is below, and no rule reproduces it.
+
 Diagnosis is only half of it. `data/telemetry_history.csv` (from `data/history_builder.py`) is 30 days
 of continuous per-machine telemetry with a physically ordered degradation ramp: bearing wear lifts
 **vibration** and **oil-particle count** first, seals let **hydraulic pressure** sag next, and
-**engine temperature** — the one signal a threshold alarm would watch — only spikes in the final hours.
+**engine temperature** — the signal conventional threshold alarms actually watch — only spikes in the final hours.
 
 So the forecasting model is scored on warning time, not accuracy:
 
@@ -177,6 +188,23 @@ the threshold is the better of two bad options. Inside the window it was built f
 the model gives usable warning where the threshold gives roughly one alarm in five.
 Every figure here is `ml/metrics.json`, which is committed — check it.
 
+The baseline in that table is **engine temperature specifically**, because that is the
+channel fleets alarm on today — not because it is the strongest threshold available. It
+isn't, and we would rather say so than be caught: a rate-matched threshold on **vibration
+slope**, which is one of the 26 features the model already receives, beats us badly at
+long range — **53.7% at 72–96 h against our 7.3%**, with a median lead time of **108 h
+against our 72 h**.
+
+What that threshold buys in range it pays for in the window where dispatch decisions are
+actually made. Across the held-out assets it catches **70–71%** of failures inside 72
+hours where the model catches **93.8–100%**; it fires at least once on **18 of the 24
+never-failing test machines** where the model fires on **0 of 24**; and only **89.8%** of
+its alarms land inside a real degradation ramp against the model's **100%**. It is an
+earlier, much noisier smoke detector. Neither is strictly better, and a fleet running this
+for real should run both — the slope rule to populate a watch-list, the model to commit a
+truck. (Reproduce both from `ml/train.py` and `ml/features.py`; the slope is feature 4 of
+26, and the split is by asset with `numpy.random.default_rng(42)`.)
+
 It answers *how soon* by asking the same question at 24 / 48 / 72 h and reporting the tightest horizon
 it clears — the estimate comes from the models, never from the label.
 
@@ -193,7 +221,9 @@ makes them separable:
 | Alternator | purely electrical — charge voltage decays, mechanics stay normal | `ALTERNATOR-24V` |
 
 Temperature is the *last* signal for the pump, the *only* signal for cooling, and never
-moves for the alternator. One threshold cannot separate these. A classifier over the
+moves for the alternator. A threshold returns a yes or a no, so no threshold on any
+channel returns a *component* — this is the one step in the pipeline with no rule-shaped
+alternative at all. A classifier over the
 trailing window identifies the component at **88.3% accuracy (0.870 macro F1)**, and the
 part on the work order follows from it — which is also why the nearest technician is
 often not the right one. On synthetic data the AUC is
@@ -211,8 +241,8 @@ physics being modelled rather than the classifier being clever.
 | **AI agent** | Autonomous closed-loop investigation; emits a step-by-step reasoning trace | `backend/app/agent/` |
 | **Agent memory** | Records how each incident resolved per asset and per ~2 km map cell; promotes repeat offenders to known dead zones | `backend/app/agent/memory.py` |
 | **Network as Code adapter** | Four CAMARA families — Device Status (reachability + roaming), Congestion Insights, Location Retrieval, Geofencing Subscriptions; live sandbox **or** dataset-backed mock, with mock-on-error fallback | `backend/app/nac/` |
-| **ML — diagnosis** | 4-class classifier, "what broke?" (`ml/train.py` → `ml/model.pkl`) | `backend/app/ml/client.py` |
-| **ML — prognosis** | Multi-horizon failure forecasting, "what is *about* to break?" (`ml/forecast_model.pkl`) | `backend/app/ml/forecast.py` |
+| **Diagnosis** | 4-class "what broke?" — an auditable rule, with `ml/model.pkl` trained as a check on it (they agree on 100% of 15,000 rows) | `backend/app/ml/client.py` |
+| **ML — prognosis** | Multi-horizon failure forecasting + component identification — the two questions no rule answers (`ml/forecast_model.pkl`, `ml/component_model.pkl`) | `backend/app/ml/forecast.py` |
 | **Operator dashboard** | Fleet map, KPIs, incident feed, live agent trace, work orders, scenario control | `frontend/` |
 
 ### AI agent layer — Resource & Tooling Guide compliant
