@@ -7,8 +7,11 @@ starts from a clean, deterministic seed every time. Every mutation publishes a
 
 from __future__ import annotations
 
+import asyncio
 import itertools
+import logging
 from datetime import datetime
+from weakref import WeakKeyDictionary
 
 from .events import bus
 from .models import (
@@ -25,6 +28,20 @@ from .models import (
     utcnow,
 )
 from .seed import build_demo_fleet, build_technicians
+
+log = logging.getLogger("store")
+
+
+def _current_task() -> asyncio.Task | None:
+    """The task we are being called from, if there is a loop at all.
+
+    Reset, the scenario routes and a good deal of the test suite reach the store from
+    plain synchronous code, where there is no task to attribute anything to.
+    """
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
 
 
 def _dead_zones() -> list[dict]:
@@ -50,6 +67,12 @@ class Store:
         self.assets: dict[str, Asset] = {}
         self.technicians: dict[str, Technician] = {}
         self.incidents: dict[str, Incident] = {}
+        # Which epoch each in-flight investigation is reasoning about, keyed by the task
+        # running it and stamped every time that task narrates a step. Deliberately not
+        # cleared by reset() — surviving the reset is the entire point; see
+        # ``add_work_order``. Weak keys, so an investigation's entry goes when its task
+        # does and a deployment that runs for days does not accumulate them.
+        self._task_epoch: WeakKeyDictionary[asyncio.Task, int] = WeakKeyDictionary()
         self.trace: dict[str, list[TraceStep]] = {}
         self.work_orders: dict[str, WorkOrder] = {}
         self.geofence_alerts: dict[str, GeofenceAlert] = {}
@@ -142,6 +165,13 @@ class Store:
             del self._triage_durations[:-500]
 
     def add_trace_step(self, step: TraceStep) -> None:
+        # Every step an investigation narrates is a store write made from inside the
+        # task running it, which makes this the one place the store can learn which
+        # fleet that task is reasoning about — without the callers having to tell it.
+        # ``add_work_order`` reads it back; see there for what it is for.
+        task = _current_task()
+        if task is not None:
+            self._task_epoch[task] = self.epoch
         self.trace.setdefault(step.incident_id, []).append(step)
         bus.publish(WsEvent(type="trace_step", payload=step.model_dump(mode="json")))
 
@@ -175,14 +205,71 @@ class Store:
         self.publish_technicians()
         return True
 
-    def add_work_order(self, wo: WorkOrder) -> None:
-        # No availability flip here on purpose. The technician was claimed by
-        # `create_work_order` the instant it chose them, before the work order existed;
-        # claiming again at this point would be a second source of truth for the same
-        # fact, and the one that arrives too late to prevent anything.
+    def add_work_order(self, wo: WorkOrder) -> bool:
+        """Put a dispatch on the board. False means it was refused as stale.
+
+        The same epoch guard the rest of the investigation has, at the one write that
+        was missing it. ``Tracer.check_current`` raises ``StaleInvestigation`` on the
+        *next* step after a reset, and re-checks are epoch-stamped — but a dispatch
+        spends ~3.6s inside ``create_work_order`` asking CAMARA Location Retrieval where
+        each technician is, with no trace step in the middle. A presenter hitting Reset
+        across that window got a clean fleet with a work order on it: WO-0001 against an
+        incident that no longer existed, `dispatches_issued` reading 1 on an untouched
+        site, and a card on the dashboard for a machine nobody had reported. The tracer
+        then killed the rest of the investigation one step later, so the work order was
+        also the only thing that survived — an order that could never be closed by the
+        run that raised it.
+
+        What dates the dispatch is the investigation's own task. Every trace step it
+        narrates stamps that task with the epoch it is working in — the same instant
+        ``Tracer.check_current`` last looked — and the last of those steps is the one
+        announcing that the crew are being located, immediately before this gap. So a
+        stamp that no longer matches means the fleet changed under a run that is still
+        mid-dispatch. Deliberately not keyed on the incident: reset restarts the
+        incident counter, so ``INC-0001`` names a different incident in every epoch and
+        callers that mint their own ids collide with it. A task cannot be confused with
+        another task. One that never narrated anything — the tools called directly from
+        a test — carries no stamp and is not judged.
+
+        No availability flip here, still on purpose. The technician was claimed by
+        ``create_work_order`` the instant it chose them, before the work order existed;
+        claiming again at this point would be a second source of truth for the same
+        fact, and the one that arrives too late to prevent anything.
+        """
+        task = _current_task()
+        dispatched_in = None if task is None else self._task_epoch.get(task)
+        if dispatched_in is not None and dispatched_in != self.epoch:
+            log.info(
+                "dropping %s for %s (%s) — the investigation was reasoning about epoch %d "
+                "and the fleet is on %d; reset while the dispatch was in flight",
+                wo.id, wo.asset_id, wo.incident_id, dispatched_in, self.epoch,
+            )
+            return False
         self.work_orders[wo.id] = wo
         self.dispatches_issued += 1
         bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
+        return True
+
+    def dispatch_in_flight(self, wo: WorkOrder) -> bool:
+        """Is the investigation that raised this work order still finishing with it?
+
+        A dispatch is not one write. The agent adds the work order, narrates one more
+        trace step — 0.7s of deliberate pause so the reasoning is readable on stage —
+        and only then marks the asset ``dispatched`` and closes the incident. The work
+        order is visible on the dashboard for that whole window, so it can be cancelled
+        or completed from the UI inside it, and that used to run straight through:
+        ``delete_work_order`` released the technician and put the machine back to
+        ``healthy``, then the investigation, still in flight, set the very same asset to
+        ``dispatched`` and closed the incident against a work order that no longer
+        existed. ``dispatched`` is a state the freshness sweep skips by design, so the
+        machine sat there with nobody driving to it and no job to complete — invisible
+        to the detector until somebody hit Reset.
+
+        An open incident is exactly that window: the work order does not exist before
+        ``create_work_order``, and the incident closes a step after it.
+        """
+        inc = self.incidents.get(wo.incident_id)
+        return inc is not None and inc.closed_at is None
 
     def resume_telemetry(self, asset_id: str) -> None:
         """Put a machine we have judged healthy back into service.
@@ -250,6 +337,14 @@ class Store:
         A fleet that only ever loses technicians is not a fleet. Completing jobs frees
         the crew, returns the machine to service, and lets the demo run indefinitely
         instead of degrading into work orders with nobody assigned.
+
+        Deliberately not gated on ``dispatch_in_flight`` the way the operator's buttons
+        are. The timer only touches a job that has been sitting for
+        ``work_order_complete_seconds`` — ninety, against a settling window under a
+        second — so it cannot land inside it, and it is the one thing that eventually
+        frees an order whose investigation died between the work order and the incident
+        close. Refusing here would turn that crash into a permanently stuck job and a
+        technician who never comes back.
         """
         from .config import get_settings
 

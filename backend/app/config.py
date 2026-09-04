@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -52,6 +53,15 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
 
     # ── App ─────────────────────────────────────────────────────────────────
+    # The absolute URL this deployment answers on, e.g.
+    # https://filo-asset-sentinel.onrender.com. Configured, never inferred: the only
+    # thing we hand out is the CAMARA geofencing callback sink, and a sink is a URL
+    # the *operator* will POST to on our credentials. Deriving it from the request
+    # would derive it from the Host header, which the caller writes — so anyone who
+    # can reach this public demo could aim a subscription made on our Nokia account
+    # at a server of their choosing. Unset means no subscription is registered
+    # (see routes/debug.py); it must never quietly fall back to the request.
+    public_base_url: str = ""
     # 0.0.0.0 in a container; hosts inject the port via $PORT.
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
@@ -91,6 +101,29 @@ class Settings(BaseSettings):
         ):
             if value and not os.environ.get(var):
                 os.environ[var] = value
+
+    def public_url(self, path: str) -> str | None:
+        """An absolute URL on this deployment for ``path``, or None if unavailable.
+
+        Returns None when PUBLIC_BASE_URL is unset or is not an absolute http(s)
+        URL — callers must treat that as "we have no public address" and skip
+        whatever they were going to hand out. Validated here rather than at the call
+        site so there is exactly one place that decides what we are willing to send
+        to an operator.
+        """
+        base = self.public_base_url.strip()
+        if not base or any(ch.isspace() for ch in base):
+            return None
+        try:
+            parsed = urlparse(base)
+        except ValueError:
+            return None
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return None
+        # Rebuild from the parsed parts rather than concatenating the raw string:
+        # anything the parser did not recognise as scheme/host/path is dropped
+        # instead of being forwarded.
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}{path}"
 
     def device_map(self) -> dict[str, str]:
         """Parse NAC_DEVICE_MAP into {asset_id: phone_number}."""

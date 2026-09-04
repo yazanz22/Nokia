@@ -32,3 +32,22 @@ def clean_state():
     yield
     store.reset()
     simulator.reseed()
+
+
+@pytest.fixture(autouse=True)
+def pinned_agent_mode():
+    """Restore ``agent_mode`` after every test, not just at the end of the session.
+
+    ``get_settings()`` is a process-wide singleton and several tests flip
+    ``agent_mode`` to "llm" in place to exercise the model path. The session-scoped
+    fixture above puts it back once, at the very end — so a test that sets it and
+    fails, or one whose restore is skipped, leaves every later test running under a
+    mode it never asked for. That was diagnosed as the likeliest cause of an
+    intermittent failure in test_llm_agent.py, where a run recorded itself as
+    "rule (fallback)" with no error — only reachable if the mode changed underneath
+    an investigation already in flight.
+    """
+    settings = get_settings()
+    before = settings.agent_mode
+    yield
+    settings.agent_mode = before

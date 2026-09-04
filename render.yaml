@@ -20,6 +20,18 @@ services:
         value: mock
       - key: SILENT_THRESHOLD_SECONDS
         value: "12"
+      # This service's own public URL, and the only source of the callback sink handed
+      # to the operator when registering a CAMARA geofencing subscription. Stated here
+      # rather than read from the request, so the URL we put on our Nokia credentials
+      # is one we chose and not one a caller wrote into a Host header.
+      #
+      # Check this against the real hostname after the first deploy: Render appends a
+      # suffix when the service name is already taken, and a custom domain replaces it
+      # outright — and a wrong value here is a real callback address handed to a real
+      # operator. Unset or malformed, nothing is registered and the live-check panel
+      # says why, which is the safe direction to fail in.
+      - key: PUBLIC_BASE_URL
+        value: https://filo-asset-sentinel.onrender.com
       # Add in the Render dashboard (never commit these):
       #   GROQ_API_KEY   -> enables AGENT_MODE=llm
       #   NAC_API_KEY    -> enables NAC_MODE=live and the live CAMARA panel

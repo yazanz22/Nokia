@@ -65,6 +65,11 @@ IncidentStatus = Literal[
     # as "hardware" is what made the graded response invisible in the incident record.
     "sensor_confirmed",      # reporting sensor failed — technician with a sensor kit
     "hardware_confirmed",    # real fault — mechanic dispatched with the named part
+    # Diagnosed, part named, work order raised — and every technician is already on a
+    # job. Deliberately not folded into the two dispatch statuses above: nobody is en
+    # route, and an incident that reads "dispatched" when no one is driving anywhere is
+    # the one lie this system cannot afford to tell an operator.
+    "awaiting_crew",
     "closed",
 ]
 
@@ -130,7 +135,11 @@ class Technician(BaseModel):
     located_via: Literal["live", "mock", "seed"] = "seed"
 
 
-WorkOrderStatus = Literal["created", "assigned", "en_route", "completed"]
+# "queued" is a job with no technician on it: the fault is confirmed and the part is
+# named, but the whole crew is already out. It is a distinct status rather than
+# "created" with an empty name because a card that says "assigned" or "dispatched"
+# with a blank technician and a 0-minute ETA is a promise nobody is keeping.
+WorkOrderStatus = Literal["queued", "created", "assigned", "en_route", "completed"]
 
 
 class GeofenceAlert(BaseModel):

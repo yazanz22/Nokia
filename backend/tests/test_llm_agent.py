@@ -472,10 +472,10 @@ async def test_run_investigation_falls_back_to_the_rule_agent(monkeypatch):
         ("429 rate_limit_exceeded: try again in 0.5s", 1.0),
         # A rate limit we cannot parse still means "wait", not "fail".
         ("Error code: 429 - rate_limit_exceeded, slow down", 5.0),
-        # Groq also formats long waits as `2m59.56s`, which this regex does not match.
-        # Documented rather than asserted-away: it falls back to the 5s default, which
-        # is too short but harmless — the next attempt just 429s again.
-        ("429 rate_limit_exceeded: Please try again in 2m59.56s.", 5.0),
+        # Groq formats long waits as `2m59.56s`. The seconds-only pattern did not match
+        # them at all, so a three-minute window silently became the 5s default and all
+        # three attempts burned inside it. The minutes are read now, and land on the cap.
+        ("429 rate_limit_exceeded: Please try again in 2m59.56s.", 20.0),
         # Never wait longer than the demo can tolerate.
         ("429 rate_limit_exceeded: Please try again in 3600s.", 20.0),
     ],
@@ -508,12 +508,20 @@ def test_retry_after_ignores_everything_that_is_not_a_rate_limit(message):
     assert _retry_after(RuntimeError(message)) is None
 
 
-def test_retry_after_over_matches_a_bare_429():
-    """Current behaviour, pinned because it is a trade-off and not obviously right.
-
-    The detector is a substring test for "429", so any error text that merely contains
-    those three digits is retried as a rate limit — three sleeps before the fallback,
-    for something that was never going to succeed. Erring toward patience is the safer
-    default on stage, but if this ever needs tightening, this is the test that says so.
+@pytest.mark.parametrize(
+    "message",
+    [
+        # 429 as a quantity, not a status code. The detector was a bare substring test,
+        # so this was retried three times — up to a minute of blank dashboard — for an
+        # error that was never a rate limit and was never going to succeed.
+        "model produced 429 tokens",
+        "context window exceeded: 429 tokens over the limit",
+    ],
+)
+def test_retry_after_ignores_a_429_that_is_not_a_status_code(message):
+    """The digits have to mean something. Either the provider names the condition
+    ("rate limit", "too many requests") or the 429 sits where a status code sits
+    ("Error code: 429", "status_code: 429") — otherwise it is not a wait, it is a
+    failure, and the rule agent should take the incident now rather than in a minute.
     """
-    assert _retry_after(RuntimeError("model produced 429 tokens")) == 5.0
+    assert _retry_after(RuntimeError(message)) is None

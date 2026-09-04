@@ -12,9 +12,11 @@ always completes, which makes it the on-stage failsafe (``AGENT_MODE=rule``).
              -> NORMAL         : transient dropout, resume telemetry, NO dispatch
              -> a real fault   : CAMARA Location Retrieval (asset, then crew)
                                  -> work order + nearest technician carrying the part
+                                 -> nobody free : job queued unassigned, NO dispatch claimed
 
-Five outcomes. Three send nobody; a sensor fault sends a cheap kit; a hardware fault
-sends a mechanic with the component the machine's own history points at.
+Six outcomes. Three send nobody; a sensor fault sends a cheap kit; a hardware fault
+sends a mechanic with the component the machine's own history points at; and a fully
+booked crew queues the job honestly instead of writing a dispatch with no one on it.
 """
 
 from __future__ import annotations
@@ -30,7 +32,9 @@ from .tools import (
     check_device_status,
     create_work_order,
     get_device_location,
+    park_awaiting_crew,
     predict_fault,
+    queued_observation,
     schedule_recheck,
 )
 from .memory import memory
@@ -252,6 +256,29 @@ async def run_rule_investigation(incident_id: str) -> None:
     )
 
     wo = await create_work_order(incident_id, asset_id, fault, loc)
+
+    # Nobody free. Say that, rather than writing a dispatch with an empty name on it.
+    # Same branch, same helper, same words as the LLM agent — the two agents disagreeing
+    # about how an outcome is recorded is the recurring bug in this codebase.
+    if wo.technician_id is None:
+        await t.step(
+            "The job is ready but every technician on the crew is already out on one. I am not "
+            "going to record a dispatch that is not happening: the work order is queued "
+            "unassigned, and the machine stays on the sweep so it is picked up the moment "
+            "somebody frees.",
+            tool="ops.create_work_order",
+            args={
+                "incident_id": incident_id,
+                "asset_id": asset_id,
+                "part": wo.part,
+                "status": "queued",
+            },
+            observation=queued_observation(wo),
+        )
+        park_awaiting_crew(incident_id, asset_id, wo, fault)
+        log.info("%s queued %s — no technician free", incident_id, wo.id)
+        return
+
     await t.step(
         "Generated work order and assigned the nearest technician who is actually carrying "
         "the part. Closest is not the same as soonest fixed.",

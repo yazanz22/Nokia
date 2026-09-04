@@ -27,7 +27,9 @@ from .tools import (
     check_device_status,
     create_work_order,
     get_device_location,
+    park_awaiting_crew,
     predict_fault,
+    queued_observation,
     schedule_recheck,
 )
 from .memory import memory
@@ -456,6 +458,28 @@ def _build_agent():
                 observation="crew positions refreshed from the network",
             )
             wo = await create_work_order(d.incident_id, d.asset_id, fault, loc)  # type: ignore[arg-type]
+
+            # Nobody free. Identical branch, identical helper, identical wording to the
+            # rule agent: the two must not record the same outcome differently. The
+            # terminal claim above stands — this incident is finished either way — but
+            # what it is finished *as* is "queued, nobody sent", not a dispatch.
+            if wo.technician_id is None:
+                await d.tracer.step(
+                    "The job is ready but every technician on the crew is already out on one. I "
+                    "am not going to record a dispatch that is not happening: the work order is "
+                    "queued unassigned, and the machine stays on the sweep so it is picked up "
+                    "the moment somebody frees.",
+                    tool="ops.create_work_order",
+                    args={"incident_id": d.incident_id, "part": wo.part, "status": "queued"},
+                    observation=queued_observation(wo),
+                )
+                park_awaiting_crew(d.incident_id, d.asset_id, wo, fault)  # type: ignore[arg-type]
+                d.terminal = "queued — awaiting a free technician"
+                return (
+                    f"{wo.id} queued: the fault is confirmed but the whole crew is on jobs, "
+                    "so nobody was dispatched"
+                )
+
             await d.tracer.step(
                 "Generated work order and assigned the nearest technician who is actually carrying "
             "the part. Closest is not the same as soonest fixed.",

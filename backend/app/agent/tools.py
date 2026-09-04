@@ -17,6 +17,7 @@ from ..nac import DeviceLocation, NetworkClient, Reachability, get_network_clien
 from ..nac.factory import get_simulated_client
 from ..ml.client import fault_model
 from ..store import store
+from .memory import memory
 
 # Serving-cell signal at/below this (dBm) is "weak"; combined with neighbour-cell
 # failures it points to a genuine coverage gap rather than a dead machine.
@@ -387,6 +388,96 @@ async def locate_crew(technicians: list[Technician]) -> str:
     return source
 
 
+def queued_order_for(asset_id: str) -> WorkOrder | None:
+    """The job already waiting on a free technician for this machine, if any.
+
+    One machine gets one job. A queued job deliberately leaves its asset in a state the
+    anomaly sweep still looks at, so the same fault *will* be investigated again — and
+    that second run has to pick the waiting job up rather than stack a duplicate beside
+    it. Keyed on the asset rather than the incident for exactly that reason: the second
+    investigation is a different incident about the same broken machine.
+    """
+    return next(
+        (w for w in store.work_orders.values() if w.asset_id == asset_id and w.status == "queued"),
+        None,
+    )
+
+
+def _record_queued(wo: WorkOrder) -> None:
+    """Register a job nobody is free to take — without calling it a dispatch.
+
+    ``store.add_work_order`` is the only path that both stores an order and tells the
+    dashboards about it, and it counts everything it registers into
+    ``dispatches_issued``. That is right for a job with somebody driving to it and wrong
+    for one sitting in a queue: the KPI is the number of trucks we actually rolled, and
+    a queued job rolled none. The count is handed back here and paid for later, when the
+    same order is registered again with a technician on it.
+
+    Only when the order was actually taken: ``add_work_order`` refuses one built for a
+    fleet that has since been reset, and un-counting a dispatch that was never counted
+    would quietly cancel somebody else's.
+    """
+    if store.add_work_order(wo):
+        store.dispatches_issued = max(0, store.dispatches_issued - 1)
+
+
+def queued_observation(wo: WorkOrder) -> str:
+    """What the trace says about a job that could not be given to anyone.
+
+    Shared by both agents so the two cannot describe the same outcome differently.
+    """
+    crew = len(store.technicians)
+    busy = sum(1 for t in store.technicians.values() if not t.available)
+    return (
+        f"{wo.id} queued unassigned carrying {wo.part or 'n/a'} — {busy}/{crew} technicians "
+        "are already on jobs, so there is no name and no ETA to put on it yet"
+    )
+
+
+def park_awaiting_crew(
+    incident_id: str,
+    asset_id: str,
+    wo: WorkOrder,
+    fault: FaultPrediction,
+) -> str:
+    """Close out a confirmed fault that has a job but nobody to send to it.
+
+    The whole crew being busy used to produce a record that contradicted itself: the
+    work order was written as ``status="created"`` with no technician and a zero ETA,
+    the resolution read "dispatched to  (ETA 0 min)", and the asset was parked in
+    ``dispatched`` — which the freshness sweep skips. A machine nobody was driving to
+    was also a machine nobody was watching, and it stayed that way until a reset.
+
+    So the honest version: the job is queued and says so, and the asset goes back to
+    ``anomaly``. That is not a cosmetic choice — ``anomaly`` is swept by the detector,
+    is returned to service by ``complete_work_order``/``delete_work_order``, and lets
+    ``record_telemetry`` advance ``last_seen`` if the machine starts talking again, so
+    every existing recovery path still works on it. ``last_seen`` is stamped now so the
+    sweep waits one full silent-threshold before re-opening rather than firing on the
+    next 2s pass; that re-investigation is what hands the queued job to the first
+    technician who frees.
+
+    Both agents call this and nothing else on this path — the two must not drift.
+    Returns the resolution text.
+    """
+    inc = store.incidents[incident_id]
+    asset = store.assets.get(asset_id)
+    crew = len(store.technicians)
+    component = f" ({fault.component.replace('_', ' ')})" if fault.component else ""
+    resolution = (
+        f"{fault.mode} confirmed @ {fault.confidence:.0%}{component}, but all {crew} "
+        f"technicians are already on jobs. {wo.id} is queued unassigned with "
+        f"{wo.part or 'no part'} against it — nobody is en route and no ETA is promised. "
+        f"The machine stays under watch and the job goes to the first technician who frees."
+    )
+    store.set_asset_state(asset_id, "anomaly", last_seen=utcnow())
+    store.close_incident(inc, status="awaiting_crew", resolution=resolution)
+    if asset is not None:
+        memory.record(asset_id, asset.latitude, asset.longitude, "awaiting_crew")
+    store.publish_kpis()
+    return resolution
+
+
 async def create_work_order(
     incident_id: str,
     asset_id: str,
@@ -459,11 +550,18 @@ async def create_work_order(
     if skipped_closer is not None and skipped_km >= distance:
         skipped_closer = None
 
+    # A job already waiting on this machine is *this* job — the re-investigation that a
+    # queued order deliberately invites. Reuse its id so the operator watches one card
+    # go from "queued" to "assigned" instead of collecting a new card every sweep.
+    waiting = queued_order_for(asset_id)
+
     wo = WorkOrder(
-        id=store.next_work_order_id(),
+        id=waiting.id if waiting is not None else store.next_work_order_id(),
         incident_id=incident_id,
         asset_id=asset_id,
-        status="assigned" if tech else "created",
+        # "queued", never "created": a work order with no technician on it is not a
+        # dispatch, and both the card and the incident record now say so out loud.
+        status="assigned" if tech else "queued",
         fault_mode=fault.mode,
         component=fault.component,
         confidence=fault.confidence,
@@ -480,5 +578,13 @@ async def create_work_order(
         nearest_skipped_name=skipped_closer.name if skipped_closer else "",
         nearest_skipped_km=round(skipped_km, 1) if skipped_closer else 0.0,
     )
-    store.add_work_order(wo)
+    # `created_at` defaults to now, and that is deliberate on both branches. It is the
+    # clock `store.advance_work_orders` runs the repair against — so it must start when
+    # a technician actually takes the job, not while it sat in a queue with nobody on
+    # it, and re-queueing has to push it forward or a waiting job would "complete"
+    # itself after WORK_ORDER_COMPLETE_SECONDS with no one having gone anywhere.
+    if tech is None:
+        _record_queued(wo)
+    else:
+        store.add_work_order(wo)
     return wo

@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from ..seed import asset_pool
+from ..seed import asset_pool, stable_int
 
 
 class AssetProfile:
@@ -52,4 +52,12 @@ class AssetProfile:
 
 
 def build_profiles(asset_ids: list[str]) -> dict[str, AssetProfile]:
-    return {aid: AssetProfile(aid, seed=hash(aid) & 0xFFFF) for aid in asset_ids}
+    """One sampler per asset, seeded so a machine behaves the same on every run.
+
+    The seed comes from :func:`~app.seed.stable_int`, not the builtin ``hash()``:
+    Python salts string hashing per process, so the previous seeding gave the same
+    excavator a different telemetry stream after every server restart — while
+    ``store`` advertised a deterministic seed. A demo that is rehearsed and then
+    performed needs the rehearsal to be the thing that gets performed.
+    """
+    return {aid: AssetProfile(aid, seed=stable_int(aid)) for aid in asset_ids}

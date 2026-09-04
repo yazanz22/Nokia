@@ -38,6 +38,8 @@ class MockNaCClient:
         self._rng = random.Random(99)
         # asset_id -> was it outside the perimeter last time we looked. Geofencing is
         # edge-triggered; without this every tick would re-announce the same machine.
+        # A missing key means "never seen", which is not the same as "was inside" —
+        # see collect_geofence_events.
         self._outside: dict[str, bool] = {}
 
     def _row_for(self, asset_id: str) -> dict:
@@ -151,12 +153,24 @@ class MockNaCClient:
 
         Edge-triggered: an asset already outside is not news, and re-announcing it
         every two seconds would bury the moment it actually crossed.
+
+        The first sighting of an asset establishes where it is; it never reports a
+        crossing. Treating an unseen asset as "was inside" instead announced every
+        machine that happened to start beyond the perimeter as having just driven
+        off site — a fabricated "leaving the site" warning that also credited the
+        Incidents-prevented counter. All 30 demo assets start well inside, but 23 of
+        the 488 eligible dataset assets do not, so raising DEMO_FLEET_SIZE would have
+        manufactured crossings out of nothing on the very first tick.
         """
         out: list[GeofenceEvent] = []
         for subj in subjects:
             km = haversine_km(subj.latitude, subj.longitude, *SITE_CENTER)
             outside = km > SITE_RADIUS_KM
-            was_outside = self._outside.get(subj.id, False)
+            was_outside = self._outside.get(subj.id)
+            if was_outside is None:
+                # Seed the edge state from the truth, and say nothing.
+                self._outside[subj.id] = outside
+                continue
             if outside == was_outside:
                 continue
             self._outside[subj.id] = outside
@@ -174,4 +188,13 @@ class MockNaCClient:
         return out
 
     def reset_geofence(self) -> None:
+        """Forget every asset's inside/outside state.
+
+        Called from ``simulator.reseed()`` after ``store.reset()`` rebuilds the fleet.
+        Keeping the old memory across a reset is what fabricates a crossing: an asset
+        that was outside when the operator hit Reset is put back inside by the new
+        fleet, and the next tick reads a stale ``True`` as "it just came back" and
+        announces an area-entered nobody drove. Clearing makes the next pass a first
+        sighting, which seeds from the actual position and stays quiet.
+        """
         self._outside.clear()

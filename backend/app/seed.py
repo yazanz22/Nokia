@@ -149,7 +149,14 @@ _SCRIPTED_ASSETS = ("EQ-0051", "EQ-0180", "EQ-0248", "EQ-0295")
 _PERIMETER_MARGIN_KM = 5.0
 
 
-def _stable_int(key: str) -> int:
+def stable_int(key: str) -> int:
+    """A hash of ``key`` that is the same in every process.
+
+    Python salts ``hash()`` of str/bytes per interpreter (PYTHONHASHSEED), so
+    anything seeded from it silently changes on every restart. Anywhere the demo
+    claims to come up the same way twice, seed from this instead. Public because
+    the simulator's per-asset samplers seed from it too.
+    """
     return int(hashlib.md5(key.encode()).hexdigest(), 16)
 
 
@@ -158,9 +165,9 @@ def _asset_from_id(asset_id: str) -> Asset:
     # Current position = latest NORMAL reading if any, else latest of anything.
     normal = pool["NORMAL"]
     ref = (normal or [r for rs in pool.values() for r in rs])[-1]
-    kind = _KINDS[_stable_int(asset_id) % len(_KINDS)]
+    kind = _KINDS[stable_int(asset_id) % len(_KINDS)]
     num = asset_id.split("-")[-1].lstrip("0") or "0"
-    site = _SITES[_stable_int(asset_id + "site") % len(_SITES)]
+    site = _SITES[stable_int(asset_id + "site") % len(_SITES)]
     return Asset(
         id=asset_id,
         kind=kind,

@@ -13,6 +13,14 @@ from ..store import store
 log = logging.getLogger("nac.geofence")
 router = APIRouter(tags=["debug"])
 
+GEOFENCE_CALLBACK_PATH = "/api/nac/geofence-callback"
+# Said the same way in both places a sink cannot be used, so the panel reads
+# identically whether we declined to build one or the operator declined to accept it.
+NEEDS_PUBLIC_URL = (
+    "The operator rejects a callback it cannot reach, so registering a perimeter "
+    "watch works from the deployed URL and not from localhost."
+)
+
 
 @router.post("/nac/live-check")
 async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
@@ -52,22 +60,33 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
             geofence.update(status="existing", count=len(existing),
                             subscription_id=existing[0].get("id"))
         else:
-            sink = str(request.base_url).rstrip("/") + "/api/nac/geofence-callback"
-            created = await client.create_geofence_subscription(sink)  # type: ignore[attr-defined]
-            geofence.update(status="created", subscription_id=created.get("id"), sink=sink)
+            # From configuration, never from the request. A sink is a URL the operator
+            # will POST to on our credentials, and request.base_url comes from the Host
+            # header — which is written by whoever called this open, public endpoint.
+            # Building it from there would let a caller register a subscription on our
+            # real Nokia account pointing at their server. Unset means we have no
+            # public address we can vouch for, and the honest answer is to register
+            # nothing rather than to guess.
+            sink = settings.public_url(GEOFENCE_CALLBACK_PATH)
+            if sink is None:
+                geofence.update(
+                    status="needs public url",
+                    note=NEEDS_PUBLIC_URL,
+                    detail=(
+                        "PUBLIC_BASE_URL is not set to an absolute http(s) URL, so no "
+                        "callback address was sent to the operator."
+                    ),
+                )
+            else:
+                created = await client.create_geofence_subscription(sink)  # type: ignore[attr-defined]
+                geofence.update(status="created", subscription_id=created.get("id"), sink=sink)
     except Exception as exc:  # noqa: BLE001
         detail = str(exc)
         if "INVALID_SINK" in detail or "callback host" in detail:
             # Expected when running locally. The operator will only accept a sink it
             # can actually reach, which is the API behaving correctly rather than a
             # fault — say so instead of showing a raw 400.
-            geofence.update(
-                status="needs public url",
-                note=(
-                    "The operator rejects a callback it cannot reach, so registering a "
-                    "perimeter watch works from the deployed URL and not from localhost."
-                ),
-            )
+            geofence.update(status="needs public url", note=NEEDS_PUBLIC_URL)
         else:
             geofence.update(status="unavailable", error=f"{type(exc).__name__}: {detail}"[:160])
 
@@ -134,6 +153,13 @@ def debug_health() -> dict:
     from ..agent.memory import memory
 
     s = get_settings()
+    # A provider exception is written for a developer's terminal: it can carry the
+    # request URL, headers and fragments of the body it was rejecting. This endpoint
+    # is open on a public deploy, so it gets a bounded prefix — enough to tell a 429
+    # from a 404 from a bad model name, and no more. The same 160 characters the
+    # geofence branch above allows itself. A bound, not a redaction: nothing genuinely
+    # secret should be in an exception message in the first place.
+    agent_error = agent_mod.last_agent_error
     return {
         "nac_mode": s.nac_mode,
         "live_camara_available": get_live_client() is not None,
@@ -142,7 +168,7 @@ def debug_health() -> dict:
         # Which agent actually ran last. If AGENT_MODE=llm but this says
         # "rule (fallback)", the model is not running — check last_agent_error.
         "last_agent_used": agent_mod.last_agent_used,
-        "last_agent_error": agent_mod.last_agent_error,
+        "last_agent_error": str(agent_error)[:160] if agent_error else None,
         "ml_backend": fault_model.backend,
         "memory_episodes": memory.size,
         "scenario_budget_remaining": inject_budget.remaining,

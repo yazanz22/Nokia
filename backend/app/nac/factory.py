@@ -8,6 +8,7 @@ falls back to the dataset-backed mock — a venue Wi-Fi hiccup can't break the d
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 
 from ..config import get_settings
 from .base import DeviceLocation, NetworkClient, Reachability
@@ -16,22 +17,66 @@ from .mock import MockNaCClient
 log = logging.getLogger("nac")
 
 
+# Which source answered each call, per caller rather than per client.
+#
+# `last_source` was one attribute on the shared singleton, overwritten by whichever
+# call finished last, and every investigation on the site shares that one client: an
+# agent falling back to the mock for a machine the sandbox has never heard of would
+# flip it to "mock" between `/api/debug/nac`'s own two calls — or, the way that reads
+# on stage, leave it saying "live" over a reachability the mock actually answered.
+# That endpoint exists to answer "is this integration real?", and a wrong answer there
+# is worse than no answer.
+#
+# A ContextVar is per asyncio task: each task gets its own copy of the context when it
+# is created, so a request sees the sources of its own calls and nobody else's. Each
+# write rebinds a fresh dict rather than mutating the one in place, so a task spawned
+# mid-flow cannot write back into its parent's record either.
+_call_sources: ContextVar[dict[str, str] | None] = ContextVar("nac_call_sources", default=None)
+
+
 class FallbackNaCClient:
     """Try live, fall back to mock per-call."""
 
     def __init__(self, live: NetworkClient, mock: NetworkClient) -> None:
         self._live = live
         self._mock = mock
-        self.last_source = "live"
+
+    @staticmethod
+    def _note(call: str, source: str) -> None:
+        sources = dict(_call_sources.get() or {})
+        sources[call] = source
+        _call_sources.set(sources)
+
+    @property
+    def last_call_sources(self) -> dict[str, str]:
+        """Which source answered each CAMARA call this caller has made."""
+        return dict(_call_sources.get() or {})
+
+    @property
+    def last_source(self) -> str:
+        """One word for it, unless the calls disagree — in which case say so.
+
+        The two calls behind `/api/debug/nac` can land differently: the sandbox knows
+        the test device's reachability but the location retrieval times out, and
+        collapsing that to "live" claims a live coordinate that came from the dataset.
+        Naming both is the honest answer, and it is the answer that endpoint exists for.
+        """
+        sources = self.last_call_sources
+        if not sources:
+            return "unknown"
+        distinct = set(sources.values())
+        if len(distinct) == 1:
+            return distinct.pop()
+        return "mixed: " + ", ".join(f"{call}={src}" for call, src in sorted(sources.items()))
 
     async def get_reachability(self, asset_id: str) -> Reachability:
         try:
             r = await self._live.get_reachability(asset_id)
-            self.last_source = "live"
+            self._note("reachability", "live")
             return r
         except Exception as exc:  # noqa: BLE001 - demo resilience is the point
             log.warning("live get_reachability failed for %s: %s — using mock", asset_id, exc)
-            self.last_source = "mock"
+            self._note("reachability", "mock")
             return await self._mock.get_reachability(asset_id)
 
     # Geofence events are about the *simulated fleet*, whose assets are not devices on
@@ -52,11 +97,11 @@ class FallbackNaCClient:
     async def get_location(self, asset_id: str) -> DeviceLocation:
         try:
             loc = await self._live.get_location(asset_id)
-            self.last_source = "live"
+            self._note("location", "live")
             return loc
         except Exception as exc:  # noqa: BLE001
             log.warning("live get_location failed for %s: %s — using mock", asset_id, exc)
-            self.last_source = "mock"
+            self._note("location", "mock")
             return await self._mock.get_location(asset_id)
 
 
