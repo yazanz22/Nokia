@@ -1,6 +1,6 @@
 # Live Demo Script — FILO Asset Sentinel
 
-Phase 2 demo, MENA Open Gateway Hackathon. **Target: 5:30.** Two people: a **driver** (laptop) and a
+Phase 2 demo, MENA Open Gateway Hackathon. **Target: 5:40.** Two people: a **driver** (laptop) and a
 **narrator** (speaks). Never the same person.
 
 Four things to land, in this order: **we don't send trucks we don't need to** (blind spot), **silence
@@ -54,7 +54,12 @@ pwsh scripts/dev.ps1
       `"ml_backend": "trained"`. If it says `rule-based`, run `python ml/train.py`.
 - [ ] `"live_camara_available": true` in that same response, or the live-proof panel will error
 - [ ] **`"last_agent_used"` is `llm`, not `rule (fallback)`** — see the Groq warning above
-- [ ] **Predictive maintenance** panel shows at-risk machines (not "unavailable")
+- [ ] **Predictive maintenance** panel shows at-risk machines (not "unavailable"), and the map is
+      showing **dashed amber rings** — that is the same forecast drawn in two places, and the
+      click-through in the 3:35 beat depends on it
+- [ ] Note which machine is top of the panel and what its **horizon** reads (`< 1 DAY` etc.) — you
+      will name it on stage, and it is scored from replayed history so it does not change between
+      rehearsal and performance unless you change `FORECAST_AS_OF`
 - [ ] **Run `python scripts/scenario_smoke.py` once on the venue network.** In `llm` mode it fails
       loudly if the model never actually ran — a silent fallback produces *identical, correct*
       output, so this is the only way to know the model is live before you claim it is.
@@ -105,7 +110,8 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 > vibration, signal strength. Everything green, fleet availability 100%.
 >
 > The triangles are field technicians. Watch them: they move, because crews drive between jobs. That
-> matters later.
+> matters later. And the dashed rings are machines the forecasting model expects to fail — we'll come
+> back to those.
 >
 > Now watch what happens when a machine goes dark."
 
@@ -221,25 +227,46 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 ---
 
-## 3:35 – 4:10 · Don't wait for the machine to stop
+## 3:35 – 4:20 · Don't wait for the machine to stop
 
-**Driver:** point at the **Predictive maintenance** panel. Don't click — it's already scored.
+**Driver:** point at the **Predictive maintenance** panel, then at the **dashed amber rings** on the
+map.
 
 > "Everything so far was reactive: something went quiet, we worked out why. But the best dispatch is
 > the one you schedule.
 >
 > Same fleet, scored continuously — machines that have **not failed**, ranked by how soon the model
-> thinks they will. And look at *why*: vibration up, oil-particle count up. Bearing wear and metal in
-> the oil. Those move **days** before anything gets hot. Engine temperature — the signal a threshold
-> alarm watches — doesn't move until the last few hours.
+> thinks they will. Every one of them is ringed on the map. Those machines are running right now.
+> Nothing is wrong with them today."
+
+**Driver:** click the top row of the panel — the machine with **< 1 DAY**. Watch it select on the
+map, then move the cursor to the **Asset telemetry** panel bottom-left.
+
+> "Here's the one I want you to look at."
+
+*(the machine is ringed and selected; the telemetry panel fills in)*
+
+> "Two badges. It says **healthy** — because it is. It's streaming, every live channel is inside its
+> normal band, and no alarm on any conventional system is going off. And next to it: **at risk, about
+> twenty-four hours.**
 >
-> Measured on held-out machines, two to three days out: our model catches **94%** of failures. A
-> temperature threshold catches **2%**. That's the difference between scheduling a repair and
-> recovering from a breakdown."
+> Both of those are true at the same time, and that is the entire argument for the model.
+>
+> Look at why it thinks so: **vibration up 1.76, oil particles up 343.** That's bearing wear and metal
+> in the oil. Those move **days** ahead. Engine temperature — the one signal a threshold alarm
+> actually watches — is still 71 degrees. Completely normal. It won't move until the last few hours,
+> and by then you're not scheduling a repair, you're recovering from a breakdown.
+>
+> On held-out machines, two to three days out: our model catches **94%** of failures. A temperature
+> threshold catches **2%**."
+
+> **Read what's on screen, not these numbers.** Vibration, particle counts and the horizon differ per
+> machine and per run. The shape of the story is what's fixed: healthy *and* at risk, with the two
+> leading channels moved and engine temperature flat.
 
 ---
 
-## 4:10 – 4:30 · Proof the network layer is real
+## 4:20 – 4:40 · Proof the network layer is real
 
 **Driver:** if the **Network as Code** panel is minimised, click **+** to open it, then click **Run
 live CAMARA check**.
@@ -256,7 +283,7 @@ live CAMARA check**.
 
 ---
 
-## 4:30 – 4:50 · The numbers, and how it works
+## 4:40 – 5:00 · The numbers, and how it works
 
 **Driver:** point at the KPI bar — **2 false dispatches avoided · 1 dispatch issued**.
 
@@ -273,7 +300,7 @@ live CAMARA check**.
 
 ---
 
-## 4:50 – 5:10 · Close
+## 5:00 – 5:20 · Close
 
 > "One more thing it does: it remembers. Every resolution is recorded against the asset and a
 > two-kilometre map cell. When a second and third silence in the same cell turns out to be coverage,
@@ -298,6 +325,8 @@ live CAMARA check**.
 | "already silent — reset the fleet" | You fired twice on the same machine. Deliberate — the second injection is refused so it can't contradict the first. Pick another asset or reset. |
 | Reset clicked mid-investigation | Safe. Anything in flight is abandoned rather than landing on the fresh fleet. |
 | Machine turns green mid-narration | The work order auto-completed at 90 s. Expected. Say *"and there's the loop closing — machine back in service."* |
+| Clicking a machine seems not to select | A brand-new incident takes the view once, by design, so the trace follows a machine going dark. Click again once the trace has landed. |
+| No dashed rings on the map | The forecast fetch failed or the model is untrained. Check `ml_backend` is `trained` in `/api/debug/health`; the reactive scenarios still work without it. |
 | Work order in the way | **Delete** on the card removes it and releases the technician. **Mark complete** closes it properly. |
 | Agent says "known dead zone" in Scenario A | Rehearsal memory. True and defensible — lean into it, or reset with `?clear_memory=true`. |
 | Trace stalls part-way (LLM mode) | It self-corrects: the agent re-asks for the terminal tool call, and failing that the rule agent finishes the incident. Say nothing and let it land. |
