@@ -1,50 +1,26 @@
-import { useEffect, useState } from "react";
-import { getFleetHealth } from "../lib/api";
-
-interface RiskRow {
-  asset_id: string;
-  label?: string;
-  site?: string;
-  risk: number;
-  horizon_hours: number | null;
-  at_risk: boolean;
-  vibration_mm_s: number;
-  vibration_delta: number;
-  oil_particle_count: number;
-  oil_particle_delta: number;
-}
+import type { RiskRow } from "../types";
 
 /**
  * The proactive half of the system: machines that have NOT failed yet, ranked by how
  * soon the model expects them to. Each row shows the two channels that actually
  * moved — vibration and oil particles — because those trend days before engine
  * temperature does, and that gap is why this is a model and not a threshold.
+ *
+ * The data is fetched once in App and shared with the map, so a machine flagged here
+ * is the same machine ringed there rather than two panels disagreeing.
  */
-export function FleetHealthPanel({ onSelect }: { onSelect: (id: string) => void }) {
-  const [rows, setRows] = useState<RiskRow[]>([]);
-  const [available, setAvailable] = useState(true);
-  const [atRisk, setAtRisk] = useState(0);
+export function FleetHealthPanel({
+  rows,
+  available,
+  atRisk,
+  onSelect,
+}: {
+  rows: RiskRow[];
+  available: boolean;
+  atRisk: number;
+  onSelect: (id: string) => void;
+}) {
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      getFleetHealth()
-        .then((d) => {
-          if (cancelled) return;
-          setAvailable(d.available);
-          setAtRisk(d.at_risk ?? 0);
-          setRows(d.assets ?? []);
-        })
-        .catch(() => setAvailable(false));
-    load();
-    // Forecasts move as the fleet does. Loading once left this panel showing a
-    // snapshot from whenever the tab happened to open.
-    const timer = window.setInterval(load, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   if (!available)
     return (

@@ -125,3 +125,18 @@ export interface WsEvent {
   payload: any;
   ts: string;
 }
+
+/** A forecast, not a status. An asset can be streaming perfectly and still be
+ *  days from a bearing failure — that gap is the whole point of the model. */
+export interface RiskRow {
+  asset_id: string;
+  label?: string;
+  site?: string;
+  risk: number;
+  horizon_hours: number | null;
+  at_risk: boolean;
+  vibration_mm_s: number;
+  vibration_delta: number;
+  oil_particle_count: number;
+  oil_particle_delta: number;
+}

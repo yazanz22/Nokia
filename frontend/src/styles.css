@@ -1221,3 +1221,54 @@ button:focus-visible {
   white-space: nowrap;
   cursor: help;
 }
+
+/* The marker is small on purpose — thirty of them have to read as a site, not a
+   cluster of buttons. Hovering grows the dot so it is clear the map is selectable
+   without making every asset shout. */
+.asset-marker circle:not([fill="transparent"]) {
+  transition: fill 0.5s ease, r 0.15s ease;
+}
+
+.asset-marker:hover circle:not([fill="none"]):not([fill="transparent"]) {
+  r: 7;
+}
+
+/* ── forecast vs. status ──────────────────────────────────────────────────
+   An asset's state describes right now; the forecast describes next week. They
+   are different claims and both can be true, so the drawer shows them side by
+   side rather than letting "healthy" imply the model found nothing. */
+.tele-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.badge.forecast {
+  background: rgba(240, 168, 48, 0.16);
+  color: var(--warn, #f0a830);
+  border-color: rgba(240, 168, 48, 0.4);
+  cursor: help;
+}
+
+.tele-forecast {
+  margin: 8px 0 2px;
+  padding: 7px 9px;
+  border: 1px solid rgba(240, 168, 48, 0.28);
+  border-radius: var(--radius-sm);
+  background: rgba(240, 168, 48, 0.07);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.tele-forecast strong {
+  color: var(--warn, #f0a830);
+}
+
+/* Legend swatch for the dashed prediction ring. */
+.map-legend i.ring {
+  background: transparent;
+  border: 1.5px dashed var(--warn, #f0a830);
+  border-radius: 50%;
+}

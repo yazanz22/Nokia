@@ -24,6 +24,7 @@ const STATE_LABEL: Record<string, string> = {
 interface Props {
   assets: Asset[];
   technicians: Technician[];
+  riskById?: Record<string, { horizon_hours: number | null }>;
   workOrders: WorkOrder[];
   deadZones: DeadZone[];
   selectedId: string | null;
@@ -61,7 +62,7 @@ function inflate(poly: [number, number][], by: number): [number, number][] {
   });
 }
 
-export function FleetMap({ assets, technicians, workOrders, deadZones, selectedId, onSelect }: Props) {
+export function FleetMap({ assets, technicians, workOrders, deadZones, riskById = {}, selectedId, onSelect }: Props) {
   // Equirectangular with a single scale for both axes. Stretching each axis
   // independently to fill the box makes the map lie about distance — at this latitude
   // it rendered east-west spans 1.85x larger than north-south ones, so a technician
@@ -264,14 +265,35 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
           const c = STATE_COLOR[a.state] ?? "#7e8798";
           const sel = a.id === selectedId;
           const alert = a.state === "silent" || a.state === "anomaly";
+          const forecast = riskById[a.id];
+          const risky = !!forecast;
           return (
             <g className="asset-marker" key={a.id} onClick={() => onSelect(a.id)}>
+              {/* The dot is 4.6 units in a 900-wide viewBox — about two pixels once
+                  the map is scaled into its panel, which is far too small to hit.
+                  This invisible disc is what you actually click. */}
+              <circle cx={x} cy={y} r="15" fill="transparent" />
+              <title>
+                {`${a.id} — ${a.label} (${a.state})` +
+                  (forecast
+                    ? ` · predicted failure in ~${forecast.horizon_hours ?? "?"}h`
+                    : "")}
+              </title>
               {alert && (
                 <circle cx={x} cy={y} r="8" fill="none" stroke={c} strokeWidth="1.5">
                   <animate attributeName="r" from="6" to="20" dur="1.6s" repeatCount="indefinite" />
                   <animate attributeName="opacity" from="0.7" to="0" dur="1.6s"
                            repeatCount="indefinite" />
                 </circle>
+              )}
+              {/* A forecast, drawn distinctly from a fault. This machine is running
+                  normally right now — the dashed ring says the model expects it not
+                  to be, which is the difference between the reactive and proactive
+                  halves of the system. Without it the map called a machine "healthy"
+                  that the predictive panel had just put a day from failure. */}
+              {risky && !alert && (
+                <circle cx={x} cy={y} r="9" fill="none" stroke="var(--warn, #f0a830)"
+                        strokeWidth="1.3" strokeDasharray="2.5 2.5" opacity="0.9" />
               )}
               {sel && <circle cx={x} cy={y} r="11" fill="none" stroke="#ff9e2c" strokeWidth="1.5" />}
               <circle cx={x} cy={y} r={sel ? 6 : 4.6} fill={c} stroke="#0a1018" strokeWidth="1.5" />
@@ -316,6 +338,12 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, selectedI
             {STATE_LABEL[k]}
           </span>
         ))}
+        {Object.keys(riskById).length > 0 && (
+          <span title="Running normally now; the forecast model expects a failure.">
+            <i className="ring" />
+            predicted failure
+          </span>
+        )}
       </div>
     </div>
   );

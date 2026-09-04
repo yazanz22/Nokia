@@ -1,4 +1,4 @@
-import type { Asset, TelemetrySample } from "../types";
+import type { Asset, RiskRow, TelemetrySample } from "../types";
 
 function Spark({
   label,
@@ -52,10 +52,12 @@ export function AssetDrawer({
   asset,
   history,
   latest,
+  risk = null,
 }: {
   asset: Asset | null;
   history: TelemetrySample[];
   latest: TelemetrySample | null;
+  risk?: RiskRow | null;
 }) {
   if (!asset)
     return (
@@ -67,6 +69,11 @@ export function AssetDrawer({
 
   const h = history.length ? history : latest ? [latest] : [];
 
+  // "healthy" is a statement about right now — the machine is streaming and every
+  // channel is nominal. The forecast is a different claim entirely, and a status
+  // chip that only ever says healthy hides it. Both are true at once, so show both.
+  const forecast = risk && risk.at_risk ? risk : null;
+
   return (
     <div>
       <div className="tele-head">
@@ -76,10 +83,33 @@ export function AssetDrawer({
             {asset.id} · {asset.site}
           </div>
         </div>
-        <span className={`badge ${asset.state === "healthy" ? "" : "investigating"}`}>
-          {asset.state}
-        </span>
+        <div className="tele-badges">
+          <span className={`badge ${asset.state === "healthy" ? "" : "investigating"}`}>
+            {asset.state}
+          </span>
+          {forecast && (
+            <span className="badge forecast" title="From the prognostic model, not the live channels.">
+              at risk
+              {forecast.horizon_hours ? ` · ~${forecast.horizon_hours}h` : ""}
+            </span>
+          )}
+        </div>
       </div>
+
+      {forecast && (
+        <div className="tele-forecast">
+          <strong>Streaming normally, and predicted to fail.</strong> Vibration{" "}
+          {forecast.vibration_mm_s.toFixed(2)} mm/s
+          {forecast.vibration_delta > 0 ? ` (+${forecast.vibration_delta.toFixed(2)})` : ""}, oil
+          particles {Math.round(forecast.oil_particle_count)}
+          {forecast.oil_particle_delta > 0
+            ? ` (+${Math.round(forecast.oil_particle_delta)})`
+            : ""}
+          . Both lead engine temperature by days, which is why the live channels above still
+          look fine.
+        </div>
+      )}
+
       <div className="sparks">
         <Spark label="Engine temp" unit="°C" values={h.map((s) => s.engine_temp_c)} lo={60} hi={135}
                color="#ffb648" />
