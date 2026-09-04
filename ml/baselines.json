@@ -1,0 +1,72 @@
+{
+  "windows_test": 12064,
+  "test_assets": 125,
+  "failures_test": 148,
+  "never_failing_test_assets": 24,
+  "model_threshold": 0.5,
+  "model_horizon_hours": 72.0,
+  "thresholds": {
+    "vibration_slope": 0.070548,
+    "vibration_slope_rate_matched_to": "model firing rate on the held-out split",
+    "engine_temp_c": 94.8
+  },
+  "firings": {
+    "model": 1921,
+    "vibration_slope": 1921,
+    "engine_temp": 840
+  },
+  "firing_rate": {
+    "model": 0.1592,
+    "vibration_slope": 0.1592,
+    "engine_temp": 0.0696
+  },
+  "detection_by_horizon": {
+    "96-120h": {
+      "model_detection_rate": 0.0,
+      "vibration_slope_detection_rate": 0.0853,
+      "temperature_rule_detection_rate": 0.0444,
+      "n_windows": 563
+    },
+    "72-96h": {
+      "model_detection_rate": 0.0735,
+      "vibration_slope_detection_rate": 0.5419,
+      "temperature_rule_detection_rate": 0.1333,
+      "n_windows": 585
+    },
+    "48-72h": {
+      "model_detection_rate": 0.9223,
+      "vibration_slope_detection_rate": 0.7044,
+      "temperature_rule_detection_rate": 0.1959,
+      "n_windows": 592
+    },
+    "24-48h": {
+      "model_detection_rate": 1.0,
+      "vibration_slope_detection_rate": 0.7078,
+      "temperature_rule_detection_rate": 0.1993,
+      "n_windows": 592
+    },
+    "0-24h": {
+      "model_detection_rate": 1.0,
+      "vibration_slope_detection_rate": 0.7128,
+      "temperature_rule_detection_rate": 0.3142,
+      "n_windows": 592
+    }
+  },
+  "median_lead_hours": {
+    "model": 72.0,
+    "vibration_slope": 102.0,
+    "engine_temp": 6.0
+  },
+  "false_alarm_assets": {
+    "model": 0,
+    "vibration_slope": 18,
+    "engine_temp": 7
+  },
+  "precision_in_ramp": {
+    "model": 1.0,
+    "vibration_slope": 0.9001,
+    "engine_temp": 0.7774
+  },
+  "slope_feature": "vibration_mm_s_slope",
+  "slope_feature_index": 3
+}

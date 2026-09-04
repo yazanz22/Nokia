@@ -413,6 +413,29 @@ body {
   transition: fill 0.5s ease, r 0.3s ease;
 }
 
+/* Decoration, not targets. The alert ring animates out to r=20 and the id label sits
+   10 units to the right of the dot, so both reach well past their own machine and
+   into a neighbour's; a stroke-only ring is hit-testable along its stroke, and a click
+   landing there selected the wrong machine. Clicks belong to the hit disc and the dot. */
+.asset-marker circle[fill="none"],
+.asset-marker text {
+  pointer-events: none;
+}
+
+/* Keyboard focus. The group is what takes focus, but a browser's default outline is
+   drawn around a <g>'s bounding box — which for a marker carrying an id label is a
+   wide rectangle sitting off to one side of the machine. Draw the ring on the hit
+   disc instead, so focus lands visibly on the dot you are about to select. */
+.asset-marker:focus {
+  outline: none;
+}
+
+.asset-marker:focus-visible .marker-hit {
+  stroke: var(--hv);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 3;
+}
+
 /* ── scenario control ────────────────────────────────────────────────── */
 /* Five scenario buttons plus reset live in this panel, and the column below it
    (predictive maintenance) takes whatever is left at 1280x720 — so the stack is
@@ -598,6 +621,29 @@ button:focus-visible {
   color: var(--ok);
 }
 
+/* A call that ran and came back empty. It keeps its place in the list — the point is
+   that the presenter can see the call was made — but drops the signal-green left edge,
+   which is reserved for live network state and would be a claim here. */
+.live-call-empty {
+  border-left-color: var(--border);
+}
+
+.badge-quiet {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.live-call-empty .kv .v.quiet {
+  color: var(--muted);
+}
+
 /* ── predictive maintenance ──────────────────────────────────────────── */
 .health-head {
   display: flex;
@@ -750,9 +796,23 @@ button:focus-visible {
 .incident.sensor_confirmed {
   border-left-color: #b78ee6;
 }
+/* Diagnosed and queued, with the whole crew already out. Slate deliberately: not the
+   amber "a truck is rolling" register, not the calm blue "nothing to send anyone for"
+   group either. The job is real and nobody has started it. */
+.incident.awaiting_crew {
+  border-left-color: #8fa3bd;
+}
 .incident.investigating,
 .incident.open {
   border-left-color: var(--crit);
+}
+
+/* These rows are buttons in behaviour, so the keyboard has to be able to see where
+   it is — hover alone is a mouse-only affordance. */
+.incident:focus-visible,
+.risk-row:focus-visible {
+  outline: 2px solid var(--hv);
+  outline-offset: 1px;
 }
 
 .incident .head {
@@ -815,6 +875,11 @@ button:focus-visible {
   color: #b78ee6;
   border-color: #4b3a6b;
   background: #1a1426;
+}
+.badge.awaiting_crew {
+  color: #8fa3bd;
+  border-color: #39465c;
+  background: #161d29;
 }
 .badge.open {
   color: var(--crit);
@@ -1116,21 +1181,8 @@ button:focus-visible {
     gap: 1px 12px;
     font-size: 11.5px;
   }
-  .wo-grid .via {
-  color: var(--ok);
-  font-size: 10.5px;
-}
-
-.wo-why {
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px dashed #56401a;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-2);
-}
-
-.wo-eta {
+  .wo-eta,
+  .wo-wait {
     margin-top: 6px;
     padding-top: 6px;
   }
@@ -1187,6 +1239,40 @@ button:focus-visible {
 .wo-status.done {
   background: rgba(120, 200, 140, 0.14);
   color: var(--ok, #78c88c);
+}
+
+/* A job with nobody on it. Slate, not the dispatch amber of `.active`: at a glance
+   across the room this card must not be countable as a truck on the road. */
+.wo-status.queued {
+  background: rgba(143, 163, 189, 0.14);
+  color: #8fa3bd;
+}
+
+/* Stands where the ETA does on a dispatched card, and says the one true thing about
+   a queued job instead of printing "0 min out / 0.0 km" at it. */
+.wo-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed #39465c;
+}
+
+.wo-wait-lbl {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8fa3bd;
+  line-height: 1.2;
+}
+
+.wo-wait-sub {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
 }
 
 /* A finished job stays on the board as a record, but stops competing for

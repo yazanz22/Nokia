@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest  # noqa: E402
 
+from app.agent.memory import memory  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.simulator import simulator  # noqa: E402
 from app.store import store  # noqa: E402
@@ -27,11 +28,25 @@ def deterministic_agent():
 
 @pytest.fixture(autouse=True)
 def clean_state():
+    """Every test starts on a fresh fleet *and* an agent that has learned nothing.
+
+    ``memory`` is a process-global that deliberately survives ``store.reset()`` — the
+    fleet is demo state, what the agent has learned about the terrain is not. That is
+    right in the product and wrong in a suite: without clearing it here, every incident
+    any earlier test resolved is still on record, so ``memory.size`` and
+    ``dead_zones()`` depend on which tests ran first and a cell can already be a known
+    dead zone before a test has recorded anything. That makes test order significant:
+    a test passes on its own and fails under ``-k``, a new file landing alphabetically
+    ahead of it, or ``-x`` stopping the run early — or, worse, keeps passing for a
+    reason that has nothing to do with what it asserts.
+    """
     store.reset()
     simulator.reseed()
+    memory.clear()
     yield
     store.reset()
     simulator.reseed()
+    memory.clear()
 
 
 @pytest.fixture(autouse=True)

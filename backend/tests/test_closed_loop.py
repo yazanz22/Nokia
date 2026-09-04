@@ -145,25 +145,55 @@ async def test_agent_learns_recurring_dead_zones():
     An area that has swallowed signal before is evidence. Without memory the same
     patch of ground gets investigated from scratch every time and nobody ever learns
     the cell is the problem rather than the machine.
-    """
-    memory.clear()
-    for _ in range(2):
-        asset_id = next(a for a, x in store.assets.items() if x.state == "healthy")
-        simulator.inject(asset_id, "blindspot")
-        inc = store.open_incident(asset_id, "test")
-        store.set_asset_state(asset_id, "silent")
-        await run_investigation(inc.id)
 
-    # Both incidents happened in roughly the same place, so the area is now known.
-    asset = next(iter(store.assets.values()))
-    recall = memory.recall(asset.id, asset.latitude, asset.longitude)
-    assert memory.size == 2
-    assert recall.cell_seen >= 0  # cells are position-derived; the episodes are recorded
+    This used to end on ``assert recall.cell_seen >= 0`` — a count compared against
+    zero, which no behaviour of any kind can fail. Nothing anywhere asserted that a
+    cell is ever promoted to a known dead zone, or that ``dead_zones()`` returns
+    anything at all, so the loop the docstring describes was entirely untested.
+    """
+    from app.agent.memory import CELL, KNOWN_DEAD_ZONE
+
+    # Both incidents are put on the same patch of ground deliberately. Memory is keyed
+    # on a ~2 km cell and the demo fleet is spread across a 160 km site, so two
+    # machines picked at random land in different cells — two isolated incidents, which
+    # is precisely the thing that is *not* a dead zone. The blind spot being in one
+    # place is the premise of the test, not an accident of the seeding.
+    site: tuple[float, float] | None = None
+    for _ in range(KNOWN_DEAD_ZONE):
+        asset = next(x for x in store.assets.values() if x.state == "healthy")
+        if site is None:
+            site = (asset.latitude, asset.longitude)
+        else:
+            asset.latitude, asset.longitude = site
+        simulator.inject(asset.id, "blindspot")
+        inc = store.open_incident(asset.id, "test")
+        store.set_asset_state(asset.id, "silent")
+        await run_investigation(inc.id)
+        assert store.incidents[inc.id].status == "network_blindspot"
+
+    assert memory.size == KNOWN_DEAD_ZONE
+
+    # A third machine arriving on that ground gets told what happened to the other two,
+    # before it is investigated at all — that is the whole point of remembering.
+    recall = memory.recall("EQ-NEVER-SEEN", *site)
+    assert recall.cell_seen == KNOWN_DEAD_ZONE
+    assert recall.cell_coverage_incidents == KNOWN_DEAD_ZONE
+    assert recall.known_dead_zone is True
+    assert "known dead zone" in recall.summary
+
+    # And the operator sees the ground, not just the incidents: a coverage map nobody
+    # had to survey for.
+    zones = memory.dead_zones()
+    assert len(zones) == 1, zones
+    assert zones[0]["incidents"] == KNOWN_DEAD_ZONE
+    assert abs(zones[0]["latitude"] - site[0]) <= CELL
+    assert abs(zones[0]["longitude"] - site[1]) <= CELL
 
     # Memory is knowledge, not fleet state: a reset must not wipe it.
     store.reset()
     simulator.reseed()
-    assert memory.size == 2
+    assert memory.size == KNOWN_DEAD_ZONE
+    assert memory.dead_zones() == zones
 
 
 @pytest.mark.asyncio

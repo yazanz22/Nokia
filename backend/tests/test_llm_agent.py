@@ -55,7 +55,7 @@ def _reach(**kw) -> Reachability:
 
     The mock NaC client picks a random dataset row, so driving these guards through it
     would make the *verdict* a lottery — and a guard test whose input drifts is a guard
-    test that stops testing the guard. Same helper shape as test_terminal_guards.py.
+    test that stops testing the guard.
     """
     base = dict(
         asset_id="EQ-0001", status="NOT_CONNECTED", signal_strength_dbm=-58.0,
@@ -122,9 +122,11 @@ def _work_orders_for(incident_id: str) -> list:
 
 # ── The three terminal guards ────────────────────────────────────────────────
 # Each terminal tool re-derives the verdict from the network evidence rather than
-# trusting that the model called the assessment tool first. test_terminal_guards.py
+# trusting that the model called the assessment tool first. test_silence_assessment.py
 # asserts the *conditions* those guards check; these assert the guards actually fire
-# when a model walks straight past the assessment and into the terminal call.
+# when a model walks straight past the assessment and into the terminal call — which is
+# the property the deck claims, and the one a duplicate file used to claim without
+# invoking a single terminal tool.
 
 
 async def test_dispatch_refuses_a_device_that_is_merely_roaming(monkeypatch):

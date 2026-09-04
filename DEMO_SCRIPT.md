@@ -8,9 +8,12 @@ has more than one innocent cause** (roaming), **when we do send someone it's rig
 (hardware + component + the right part), and **we see failures coming days out** (predictive). The
 live CAMARA panel is the proof that the network layer is real, held for the end or for Q&A.
 
-Verified end to end on 2026-09-03 against `main` (`efc5023`). Numbers marked ≈ vary per run —
-**read what's on screen, don't recite from memory.** The three resolution lines quoted below are
-real output from that run.
+Numbers marked ≈ vary per run — **read what's on screen, don't recite from memory.**
+
+> **Re-verify before recording.** This script was last walked end to end against a build that
+> predates the current `main`, and the quoted resolution lines came from that run. A great deal
+> has changed since. Do a full dry run, confirm every quoted line still matches what the screen
+> says, and only then re-stamp this note with the commit you actually rehearsed against.
 
 ---
 
@@ -23,6 +26,7 @@ real output from that run.
 | **Scenario A asset** | `EQ-0295` — Haul Truck HT-295, Red Sea Global, Coastal Access Road |
 | **Scenario B asset** | `EQ-0051` — roaming. Any healthy asset works; the mock synthesises the foreign network. |
 | **Scenario C asset** | `EQ-0180` — Loader LD-180, NEOM, Trojena Ridge |
+| **Scenario D asset** | `EQ-0233` — Excavator EX-233, Red Sea Global — Coastal Access Road. **Use this one and no other.** Crossing time is a property of where the machine starts, and across the current fleet it ranges from 10 s (`EQ-0097`) to 58 s (`EQ-0274`). `EQ-0233` starts 4.6 km from the site centre and crosses at **34 s**, every time — it was the same in 400 simulated runs, because the drift step dwarfs the random walk. It also starts nearest the middle of the map, so it visibly drives the whole way out — and the forecasting model scores it **not at risk**, so it carries no amber ring and "nothing is wrong with this one" is true on both counts. |
 | **Modes** | See Pre-flight. Decide `NAC_MODE` / `AGENT_MODE` before you walk in, not on stage. |
 | **Model** | `groq:openai/gpt-oss-120b`. `groq:qwen/qwen3.8-27b` also verified end to end if Groq degrades one of them. |
 
@@ -109,7 +113,8 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 ## 0:30 – 0:55 · What you're looking at
 
 > "Our operations dashboard. Thirty machines on a live site streaming telemetry — engine temperature,
-> vibration, signal strength. Everything green, fleet availability 100%.
+> signal strength, telemetry age and neighbouring-cell failures. Everything green, fleet availability
+> 100%.
 >
 > The triangles are field technicians. Watch them: they move, because crews drive between jobs. That
 > matters later. And the dashed rings are machines the forecasting model expects to fail — we'll come
@@ -118,6 +123,12 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 > Now watch what happens when a machine goes dark."
 
 **Driver:** point at the map, the drifting technician markers, then the KPI bar. Don't click yet.
+
+> **Don't say "vibration" here.** Those four are the channels the Asset telemetry panel actually
+> draws — `TelemetrySample` carries nothing else. Vibration and oil particles are real, but they live
+> in the replayed 30-day history behind the forecasting model, and they appear on screen exactly once:
+> in the at-risk line at 3:35. Naming them at 0:30 invites someone to look for a vibration trace that
+> isn't there, and it spends the surprise the predictive beat is built on.
 
 ---
 
@@ -260,7 +271,7 @@ map, then move the cursor to the **Asset telemetry** panel bottom-left.
 > actually watches — is still 71 degrees. Completely normal. It won't move until the last few hours,
 > and by then you're not scheduling a repair, you're recovering from a breakdown.
 >
-> On held-out machines, two to three days out: our model catches **93.8%** of failures. A temperature
+> On held-out machines, two to three days out: our model catches **92.2%** of failures. A temperature
 > threshold — what fleets actually alarm on today — catches **19.6%**.
 >
 > Inside three days. Past that we lose — nothing was trained to warn earlier, and the numbers for
@@ -274,11 +285,18 @@ map, then move the cursor to the **Asset telemetry** panel bottom-left.
 
 ## 4:20 – 4:55 · The incident that never happens
 
-> **Stagecraft:** click this button at the *start* of the predictive beat above, then narrate
-> predictive while the machine drives. It takes ~35 s to reach the perimeter, and you do not want to
-> stand and watch it.
+> **Stagecraft:** click this button *during* the predictive beat above, then narrate predictive while
+> the machine drives — you do not want to stand and watch it. `EQ-0233` takes **34 s** to reach the
+> perimeter, so click it about **fifteen seconds into predictive** (≈3:50) and it crosses at ≈4:24,
+> a few seconds into this beat, with the audience watching. Click at the *top* of predictive and it
+> crosses at ≈4:09 — still fine, but it will already be sitting outside when you get here, so drop
+> "watch it" and narrate the aftermath instead.
+>
+> Use `EQ-0233` and no other. Crossing time is set by where the machine starts, and on the current
+> fleet it ranges from 10 s (`EQ-0097` — gone before you finish the sentence) to 58 s (`EQ-0274` —
+> long after you've moved on). See Scenario D in Locked decisions.
 
-**Driver:** select a healthy asset, confirm the button reads it, click **Leaving the site
+**Driver:** select `EQ-0233`, **confirm the button reads `EQ-0233`**, click **Leaving the site
 (geofence)**. Come back to the map now — it should be out near the western edge, or crossing.
 
 > "One last machine. Nothing is wrong with this one — watch it. Engine fine, telemetry streaming,
@@ -344,11 +362,15 @@ live CAMARA check**.
 
 ## 5:35 – 5:55 · Close
 
-> "One more thing it does: it remembers. Every resolution is recorded against the asset and a
-> two-kilometre map cell. When a second and third silence in the same cell turns out to be coverage,
-> that area becomes a known dead zone — drawn on the map, and used to triage the next incident there.
-> A construction site's coverage map changes as the site is built. This learns the terrain instead of
-> re-deriving it every time.
+> "One more thing, and it's the thing that compounds. Every resolution you just watched was recorded
+> against the machine and against a two-kilometre map cell. Six minutes isn't long enough to show you
+> what that buys — you've watched two connectivity incidents, and they were in two different cells. But
+> run this site for a fortnight and the second and third silence in the *same* cell come back coverage,
+> and that cell is promoted to a known dead zone: drawn on the map, and handed to the agent as prior
+> evidence the next time something goes quiet there.
+>
+> That is a coverage map nobody surveyed for. A construction site's coverage changes as the site is
+> built, so this learns the terrain instead of re-deriving it every time.
 >
 > Every alert validated against network truth before anyone is sent anywhere. It scales across NEOM,
 > Red Sea Global, Qiddiya, Masdar — anywhere assets outrun coverage.
@@ -356,6 +378,25 @@ live CAMARA check**.
 > We're ready to pilot on live fleet data with a regional operator. Thank you."
 
 **Driver:** leave the final frame up — all three incidents in the feed, KPI bar showing both outcomes.
+**Do not gesture at the map on this line.** There will be no dead zone drawn on it, and pointing at
+an empty map is the one moment in six minutes where the audience sees a claim fail.
+
+> **Why there won't be one.** A cell is promoted at two coverage incidents (`KNOWN_DEAD_ZONE = 2` in
+> `backend/app/agent/memory.py`), and the current 30-machine fleet occupies **30 distinct 2 km cells**
+> — no two machines share one. So a zone needs the *same* machine to produce two coverage incidents,
+> which needs a fleet reset in between, which is not in this run. That is the honest state of it: the
+> mechanism is real and the map draws it (`FleetMap.tsx` renders the cells and a legend), but a clean
+> six-minute demo cannot manufacture the evidence for it, and lowering the threshold to make one
+> appear on stage would be staging the evidence rather than showing it. Narrate the mechanism, promise
+> the fortnight, point at nothing.
+>
+> If a judge asks to *see* one: reset **without** `clear_memory` (memory deliberately outlives the
+> fleet, which is the point), then re-fire the blind spot on the same machine. Two coverage incidents
+> in one cell, and the zone draws. Caveat worth knowing before you offer it: the machine random-walks
+> between reset and injection, and `EQ-0295` sits only ~0.34 km from a cell edge, so the second
+> incident occasionally lands in the neighbouring cell and no zone appears. Say what you're doing
+> while you do it, and if it lands next door, that is a two-kilometre grid behaving exactly as
+> described — not a failure. It just isn't a thing to point at mid-close.
 
 ---
 
@@ -368,7 +409,7 @@ live CAMARA check**.
 | Reset clicked mid-investigation | Safe. Anything in flight is abandoned rather than landing on the fresh fleet. |
 | Machine turns green mid-narration | The work order auto-completed at 90 s. Expected. Say *"and there's the loop closing — machine back in service."* |
 | Clicking a machine seems not to select | A brand-new incident takes the view once, by design, so the trace follows a machine going dark. Click again once the trace has landed. |
-| Geofenced machine hasn't crossed yet | It needs ~35 s of driving. Keep narrating; it crosses on its own. Injecting again is refused with a 409. |
+| Geofenced machine hasn't crossed yet | `EQ-0233` needs 34 s of driving. Keep narrating; it crosses on its own. Injecting again is refused with a 409. If you fired on a different machine it could be anywhere from 10 s to 58 s out — narrate predictive until the blue alert lands, and don't promise a time you didn't measure. |
 | No dashed rings on the map | The forecast fetch failed or the model is untrained. Check `ml_backend` is `trained` in `/api/debug/health`; the reactive scenarios still work without it. |
 | Work order in the way | **Delete** on the card removes it and releases the technician. **Mark complete** closes it properly. |
 | Agent says "known dead zone" in Scenario A | Rehearsal memory. True and defensible — lean into it, or reset with `?clear_memory=true`. |
@@ -451,12 +492,16 @@ cannot become a work order regardless of what the model decides.
 Two guards. Every terminal action is a tool with fixed logic, so the model chooses *whether* to
 dispatch, never *what* a dispatch does — it cannot invent a technician or a part. And if it stalls
 without deciding, the deterministic agent finishes the same incident. You can run the whole demo with
-`AGENT_MODE=rule` and no model at all; the on-screen result is identical.
+`AGENT_MODE=rule` and no model at all: same steps, same evidence, same verdict, same work order. Two
+things differ, and neither is content — the phrasing of the reasoning is templated rather than the
+model's own, and the whole investigation lands in **~5 s instead of ~28 s**, because nothing is
+waiting on a model. That speed changes how you present it: you narrate over a finished panel rather
+than alongside a filling one (see the recovery playbook).
 
 **"How do you know which component failed, not just that something did?"**
 A separate classifier over 30 days of per-machine history across five channels, trained on four
 components with distinct signatures — hydraulic pump, cooling system, main bearing, alternator.
-88.3% accuracy, 0.870 macro F1. Alternator faults are the interesting case: they're close to
+88.6% accuracy, 0.872 macro F1. Alternator faults are the interesting case: they're close to
 invisible without battery voltage, which is why that channel is in there. The component is what
 selects the part, and the part is what selects the technician.
 
@@ -509,7 +554,7 @@ the dataset, and the answer is stronger than the hedge.
 **"Your forecasting AUC is basically 1.0 — isn't that too good?"**
 On synthetic data, yes, AUC is the wrong number to judge us on and we don't lead with it. The number
 we report is **warning time against the obvious baseline**: at two to three days out the model flags
-93.8% of failures, a temperature threshold flags 19.6%. That gap is a property of the physics we modelled
+92.2% of failures, a temperature threshold flags 19.6%. That gap is a property of the physics we modelled
 — vibration and oil-particle trends lead engine temperature by days — not of the classifier being
 clever. On real fleet data the absolute numbers move; the ordering of those signals doesn't.
 
@@ -517,16 +562,19 @@ clever. On real fleet data the absolute numbers move; the ordering of those sign
 Yes, and this is the answer to volunteer rather than wait for. Temperature is the baseline because
 it is what fleets alarm on *today* — it is the incumbent, not the strongest threshold in our data.
 The strongest is a rate-matched threshold on **vibration slope**, and past 72 hours it beats us:
-**53.7% detection at 72–96 h against our 7.3%**, median lead **108 h against our 72 h**. And that
+**54.2% detection at 72–96 h against our 7.3%**, median lead **102 h against our 72 h**. And that
 slope is feature 4 of the 26 the model already receives, so we can't even call it an unfair
 comparison — it beat us with something we handed it.
 
 What it costs is the window where you actually decide to send a truck. Inside 72 hours that rule
-catches **70–71%** where the model catches **93.8–100%**; it alarms at least once on **18 of the 24
-never-failing machines** in the held-out split, against **0 of 24** for the model; and only **89.8%**
+catches **70–71%** where the model catches **92.2–100%**; it alarms at least once on **18 of the 24
+never-failing machines** in the held-out split, against **0 of 24** for the model; and only **90.0%**
 of its firings land inside a genuine degradation ramp, against **100%**. It is an earlier and far
 noisier smoke detector. The right production answer is both — the slope rule feeds a watch-list, the
 model commits the dispatch — and that is the answer to give, not a defence of the model alone.
+
+Every number in those two paragraphs is in `ml/baselines.json`, committed, and regenerated by
+`python ml/baselines.py`. If a judge asks where they come from, open the file.
 
 **"How do you get 'about three days' from a yes/no classifier?"**
 We don't. We train the same question at 24, 48 and 72 hours and report the tightest horizon that

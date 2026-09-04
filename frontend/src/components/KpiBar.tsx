@@ -15,18 +15,23 @@ function money(n: number): string {
 /** Counts up to a new value so a change reads as an event, not a redraw. */
 function useCountUp(target: number, ms = 550): number {
   const [v, setV] = useState(target);
-  const from = useRef(target);
+  // The number currently on screen, kept in step with every frame — not the value the
+  // last run started from. Two incidents resolving inside half a second is normal, and
+  // the old ref only advanced when a run finished: the second count restarted at the
+  // stale figure, so the tile visibly snapped backwards before climbing again.
+  const shown = useRef(target);
   useEffect(() => {
-    if (target === from.current) return;
+    if (target === shown.current) return;
     const start = performance.now();
-    const a = from.current;
+    const a = shown.current;
     let raf = 0;
     const tick = (now: number) => {
       const t = Math.min((now - start) / ms, 1);
       const eased = 1 - Math.pow(1 - t, 3);
-      setV(a + (target - a) * eased);
+      const next = t < 1 ? a + (target - a) * eased : target;
+      shown.current = next;
+      setV(next);
       if (t < 1) raf = requestAnimationFrame(tick);
-      else from.current = target;
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);

@@ -2,9 +2,23 @@ import { useEffect, useRef } from "react";
 import type { TraceStep } from "../types";
 
 export function AgentTrace({ steps, active }: { steps: TraceStep[]; active: boolean }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Keep the newest step in view — but move only the pane the trace lives in.
+  // `scrollIntoView` scrolls *every* scrollable ancestor, and below 1120px the grid
+  // stacks and the page itself scrolls: each new step would have dragged the layout
+  // up and taken the site map off screen while the agent was reasoning on stage.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const root = rootRef.current;
+    if (!root) return;
+    const stop = root.closest(".panel");
+    let box: HTMLElement | null = root;
+    while (box && box !== stop) {
+      if (box.scrollHeight > box.clientHeight + 1) {
+        box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+        return;
+      }
+      box = box.parentElement;
+    }
   }, [steps.length]);
 
   if (steps.length === 0)
@@ -20,7 +34,7 @@ export function AgentTrace({ steps, active }: { steps: TraceStep[]; active: bool
     );
 
   return (
-    <div className="trace">
+    <div className="trace" ref={rootRef}>
       {steps.map((s) => (
         <div className={`trace-step${s.tool ? " tool" : ""}`} key={`${s.incident_id}-${s.step}`}>
           <div className="n">{s.step}</div>
@@ -45,7 +59,6 @@ export function AgentTrace({ steps, active }: { steps: TraceStep[]; active: bool
           </div>
         </div>
       )}
-      <div ref={endRef} />
     </div>
   );
 }

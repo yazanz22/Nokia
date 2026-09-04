@@ -120,20 +120,36 @@ def test_the_drift_stops_instead_of_running_off_the_map():
     A machine that kept driving put itself 240 km out against a 119 km site, which
     rescales the map until the site is a smudge — on the frame the demo script leaves
     up while it closes.
+
+    Driven through the simulator's own tick. The previous version of this test walked
+    the asset west itself and applied the stop rule in its own loop — a copy of the
+    four lines in ``engine._tick`` — so it asserted on state it had produced. Deleting
+    the real rule from the engine left it passing.
     """
-    from app.simulator.engine import DRIFT_STEP_DEG, DRIFT_STOP_KM
+    from app.simulator.engine import DRIFT_STOP_KM
 
     asset_id = sorted(store.assets)[2]
     asset = store.assets[asset_id]
     simulator.inject(asset_id, "offsite")
+    assert asset_id in simulator._drifting
+    start_km = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
+    assert start_km <= SITE_RADIUS_KM, "must start on site or there is nothing to leave"
 
     for _ in range(400):
+        simulator._tick()
         if asset_id not in simulator._drifting:
             break
-        asset.longitude -= DRIFT_STEP_DEG
-        if haversine_km(asset.latitude, asset.longitude, *SITE_CENTER) > SITE_RADIUS_KM + DRIFT_STOP_KM:
-            simulator._drifting.discard(asset_id)
+    else:
+        km = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
+        pytest.fail(f"the simulator never stopped the drift — {km:.0f} km out after 400 ticks")
 
     out = haversine_km(asset.latitude, asset.longitude, *SITE_CENTER)
     assert out > SITE_RADIUS_KM, "must actually leave the site"
     assert out < SITE_RADIUS_KM + DRIFT_STOP_KM + 10, f"ran away to {out:.0f} km"
+
+    # And it stays stopped: further ticks are the ordinary healthy random-walk, not
+    # another 5.5 km west. Without this a stop rule that fired once and let the asset
+    # go again would still pass everything above.
+    for _ in range(20):
+        simulator._tick()
+    assert haversine_km(asset.latitude, asset.longitude, *SITE_CENTER) < out + 5

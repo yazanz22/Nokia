@@ -50,6 +50,11 @@ export type IncidentStatus =
   | "roaming_blocked"
   | "sensor_confirmed"
   | "hardware_confirmed"
+  // Diagnosed, part named, work order raised — and every technician is already out.
+  // Kept apart from the two dispatch statuses on purpose: nobody is en route, and a
+  // feed that reads "dispatched" while no one is driving anywhere is the one thing
+  // this dashboard must never tell an operator.
+  | "awaiting_crew"
   | "closed";
 
 export interface Incident {

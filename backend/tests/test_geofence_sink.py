@@ -212,3 +212,58 @@ def test_health_truncates_the_provider_error(monkeypatch):
 
     monkeypatch.setattr(agent_mod, "last_agent_error", None)
     assert TestClient(app).get("/api/debug/health").json()["last_agent_error"] is None
+
+
+# ── Congestion Insights reporting ────────────────────────────────────────────
+# The live panel used to render its congestion block only when a level came back, so a
+# swallowed best-effort call made the whole thing vanish with nothing on screen — while
+# the demo script sends the presenter to it for "real level, real confidence". This is
+# also the family that makes the coverage verdict reachable against a real operator at
+# all, since the live client leaves signal strength and neighbour failures None. The
+# panel now needs to tell "asked and got nothing" apart from "asked and got a reading",
+# so the endpoint has to say which happened.
+
+
+class _QuietLiveClient(FakeLiveClient):
+    """A sandbox whose congestion query gave nothing usable."""
+
+    async def get_reachability(self, asset_id: str) -> Reachability:
+        return Reachability(
+            asset_id=asset_id,
+            status="CONNECTED_DATA",
+            congestion_level=None,
+            congestion_confidence=None,
+            as_of=utcnow(),
+            source="live",
+        )
+
+
+def test_a_congestion_reading_is_reported_as_returned(fake_live, public_base):
+    body = _live_check()
+    block = body["congestion_insights"]
+
+    assert block["attempted"] is True
+    assert block["returned"] is True
+    assert block["result"]["congestion_level"] == "Low"
+    assert block["result"]["confidence_level"] == 90
+    # The floor comes from the backend that applies it. The frontend used to hardcode
+    # its own copy of 50, which is exactly how two thresholds drift apart.
+    from app.agent.tools import MIN_CONGESTION_CONFIDENCE
+
+    assert block["min_confidence"] == MIN_CONGESTION_CONFIDENCE
+
+
+def test_a_silent_congestion_query_is_reported_not_omitted(monkeypatch, public_base):
+    import app.routes.debug as debug_routes
+
+    monkeypatch.setattr(debug_routes, "get_live_client", lambda: _QuietLiveClient())
+    block = _live_check()["congestion_insights"]
+
+    # The call still went out — it rides inside the reachability step — so the panel
+    # must be able to say so rather than showing the presenter an empty space.
+    assert block["attempted"] is True
+    assert block["returned"] is False
+    assert block["note"]
+    # And the shape the panel already consumed is unchanged.
+    assert block["result"]["congestion_level"] is None
+    assert block["result"]["confidence_level"] is None

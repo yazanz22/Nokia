@@ -104,9 +104,13 @@ class ForecastModel:
             return None
         feats = _load_features_module()
         rows = _history().get(asset_id) or []
-        if len(rows) < feats.WINDOW:
+        # Same rule as training: a window that straddles a repair gap is not a trend,
+        # so we have no opinion on it. Training drops those windows outright, and
+        # serving has to drop them identically or the model is being asked a question
+        # it was never fitted on. See ml/features.py.
+        window = feats.trailing_window(rows, feats.WINDOW)
+        if window is None:
             return None
-        window = rows[-feats.WINDOW :]
         x = [feats.prognostic_features(window)]
 
         # Probability at each horizon, then the tightest one that clears threshold.
@@ -163,9 +167,12 @@ class ForecastModel:
             return None
         feats = _load_features_module()
         rows = _history().get(asset_id) or []
-        if len(rows) < feats.WINDOW:
+        # The component model is fitted on the same gap-free windows as the horizon
+        # models, so it gets the same window or nothing.
+        window = feats.trailing_window(rows, feats.WINDOW)
+        if window is None:
             return None
-        x = [feats.prognostic_features(rows[-feats.WINDOW :])]
+        x = [feats.prognostic_features(window)]
         proba = self._component.predict_proba(x)[0]
         classes = list(self._component.classes_)
         best = int(proba.argmax())

@@ -52,8 +52,13 @@ export default function App() {
         })
         .catch(() => setRiskAvailable(false));
     load();
-    // Forecasts move as the fleet does; loading once left a snapshot from whenever
-    // the tab happened to open.
+    // Not because the scores drift — they cannot. The forecast is cut at a fixed
+    // FORECAST_AS_OF and no live telemetry reaches it, so a given machine's number is
+    // the same all session. What moves is *which* machines are scored: one dispatched,
+    // gone silent or ruled a blindspot drops out of the roster, and one back from a
+    // work order rejoins it. Loading once left the panel listing machines a technician
+    // was already driving to. The endpoint is cached server-side on that same roster,
+    // so a poll that finds nothing changed costs nothing.
     const timer = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;
@@ -87,7 +92,15 @@ export default function App() {
   // when it is genuinely new. A machine going dark should take over the screen; an
   // investigation already on screen should not keep stealing it back.
   useEffect(() => {
-    if (incidents.length === 0) return;
+    if (incidents.length === 0) {
+      // A reset empties the board *and* restarts the backend's incident numbering at
+      // INC-0001. Leaving the ref set meant the second demo run's first incident was
+      // read as one already followed, so the map and the drawer stayed on the machine
+      // from the previous run while the agent investigated a different one on stage.
+      followed.current = null;
+      setSelectedIncident(null);
+      return;
+    }
     const active = incidents.find((i) => i.closed_at === null);
     if (active) {
       if (followed.current !== active.id) {
@@ -301,11 +314,18 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              <IncidentFeed
-                incidents={incidents}
-                selectedId={selectedIncident}
-                onSelect={setSelectedIncident}
-              />
+              {/* The feed's empty state reads "All clear — every asset is reporting",
+                  which is still true of the incident record when a geofence alert is
+                  standing: nothing has failed. On screen directly beneath the alert it
+                  read as a contradiction, so the banner stands down while an alert is
+                  up and the alert speaks for the panel. */}
+              {(incidents.length > 0 || geofenceAlerts.length === 0) && (
+                <IncidentFeed
+                  incidents={incidents}
+                  selectedId={selectedIncident}
+                  onSelect={setSelectedIncident}
+                />
+              )}
             </div>
           </div>
         </div>

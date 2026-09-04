@@ -6,7 +6,7 @@ interface LiveResult {
   device: string;
   device_status: { path: string; latency_ms: number; result: any };
   location_retrieval: { path: string; latency_ms: number; result: any };
-  congestion_insights?: { path: string; bundled_with: string; result: any };
+  congestion_insights?: CongestionCall;
   geofencing?: {
     path: string;
     status: string;
@@ -15,6 +15,25 @@ interface LiveResult {
     note?: string;
     error?: string;
   };
+}
+
+/**
+ * Congestion Insights is best-effort on the backend — it is issued inside the
+ * reachability call and must never fail it — so it is the one family here that can come
+ * back empty on its own. `returned` says whether it did, which is not the same question
+ * as what the level was: "None" is a level the operator states and it means the serving
+ * area is clear.
+ */
+interface CongestionCall {
+  path: string;
+  bundled_with: string;
+  attempted?: boolean;
+  returned?: boolean;
+  /** The confidence floor the agent actually applied, sent by the backend so this panel
+   *  never keeps a second copy of the number to drift out of step with. */
+  min_confidence?: number;
+  note?: string;
+  result: { congestion_level?: string | null; confidence_level?: number | null };
 }
 
 /**
@@ -113,31 +132,7 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
             </div>
           </div>
 
-          {res.congestion_insights?.result?.congestion_level && (
-            <div className="live-call">
-              <div className="live-call-head">
-                <span className="badge-live">LIVE</span>
-                <span className="path">Congestion Insights v0</span>
-                <span className="lat">bundled</span>
-              </div>
-              <div className="kv">
-                <span className="k">serving area</span>
-                <span className="v">
-                  {res.congestion_insights.result.congestion_level}
-                  {res.congestion_insights.result.confidence_level != null
-                    ? ` · ${res.congestion_insights.result.confidence_level}% confidence`
-                    : ""}
-                </span>
-              </div>
-              {res.congestion_insights.result.confidence_level != null &&
-                res.congestion_insights.result.confidence_level < 50 && (
-                  <div className="hint" style={{ marginTop: 4 }}>
-                    Below our 50% confidence floor, so the agent reports this and decides on other
-                    evidence. The sandbox returns a fresh synthetic reading per call.
-                  </div>
-                )}
-            </div>
-          )}
+          {res.congestion_insights && <CongestionBlock call={res.congestion_insights} />}
 
           {res.geofencing && (
             <div className="live-call">
@@ -165,6 +160,64 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
             A real call to the Nokia sandbox. The test SIM is provisioned in Hungary — the fleet
             above is replayed telemetry served through the identical CAMARA contract.
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Congestion Insights, including when it has nothing to say.
+ *
+ * This block used to render only when a level came back, so a sandbox hiccup deleted it
+ * from the panel with no trace — and this is the family that carries the argument: CAMARA
+ * Device Status returns no signal strength and no neighbour-cell failures, so grading the
+ * serving *area* is the only network-side evidence that a silence is coverage rather than
+ * a breakdown. A presenter pointing at where it should be deserves to see the call
+ * reported as attempted and empty, not to find a gap.
+ */
+function CongestionBlock({ call }: { call: CongestionCall }) {
+  const level = call.result?.congestion_level ?? null;
+  // Older responses carry neither flag; fall back to the shape of the reading itself.
+  const returned = call.returned ?? level != null;
+  const conf = call.result?.confidence_level ?? null;
+  const floor = call.min_confidence;
+
+  return (
+    <div className={`live-call${returned ? "" : " live-call-empty"}`}>
+      <div className="live-call-head">
+        <span className={returned ? "badge-live" : "badge-quiet"}>
+          {returned ? "LIVE" : "NO READING"}
+        </span>
+        <span className="path">Congestion Insights v0</span>
+        <span className="lat">bundled</span>
+      </div>
+
+      <div className="kv">
+        <span className="k">serving area</span>
+        <span className={returned ? "v" : "v quiet"}>
+          {returned ? `${level}${conf != null ? ` · ${conf}% confidence` : ""}` : "no reading"}
+        </span>
+      </div>
+
+      {!returned && (
+        <div className="hint" style={{ marginTop: 4 }}>
+          {call.note ??
+            "The call went out with the reachability check and returned nothing we could read, so the agent decides on the other signals."}
+        </div>
+      )}
+
+      {returned && level === "None" && (
+        <div className="hint" style={{ marginTop: 4 }}>
+          “None” is the operator grading this area as clear — a reading, not a missing answer.
+          Low congestion strengthens the hardware verdict rather than excusing it.
+        </div>
+      )}
+
+      {returned && conf != null && floor != null && conf < floor && (
+        <div className="hint" style={{ marginTop: 4 }}>
+          Below the agent's {floor}% confidence floor, so it reports this and decides on other
+          evidence. The sandbox returns a fresh synthetic reading per call.
         </div>
       )}
     </div>

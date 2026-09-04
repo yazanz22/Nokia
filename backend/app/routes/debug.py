@@ -3,6 +3,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..agent.tools import MIN_CONGESTION_CONFIDENCE
 from ..config import get_settings
 from ..ml.client import fault_model
 from ..nac import get_live_client, get_network_client
@@ -19,6 +20,16 @@ GEOFENCE_CALLBACK_PATH = "/api/nac/geofence-callback"
 NEEDS_PUBLIC_URL = (
     "The operator rejects a callback it cannot reach, so registering a perimeter "
     "watch works from the deployed URL and not from localhost."
+)
+# Congestion is the one family here that can come back empty on its own — the adapter
+# issues it best-effort so it can never fail the reachability answer beside it. The
+# panel used to render nothing at all in that case, which quietly removed the API that
+# carries the whole coverage argument. Say it out loud instead, and say what it is not:
+# "None" is a level the operator states and it means the opposite of this.
+CONGESTION_NO_READING = (
+    "The query ran alongside the reachability call and came back without a reading we "
+    "could use, so the agent judges this silence on the other signals. Not the same as "
+    "a clear area — the operator grades that as level 'None'."
 )
 
 
@@ -90,6 +101,36 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
         else:
             geofence.update(status="unavailable", error=f"{type(exc).__name__}: {detail}"[:160])
 
+    # Congestion Insights rides along inside the reachability call above: the adapter
+    # reports the (level, confidence) pair or neither — ``parse_congestion`` refuses a
+    # level with no stated confidence behind it — and swallows the reason, because it is
+    # best-effort by design and must not take the primary answer down with it. So an
+    # absent level here means the query did not return a reading we could use, and that
+    # is a different fact from a serving area the operator grades as clear. Both used to
+    # leave the panel with a bare null and no way to tell them apart.
+    #
+    # Inferred rather than reported, and worth naming as such: the exception itself
+    # stays in the adapter, logged under "nac.live". Rerunning the call here to capture
+    # it would spend a second sandbox query per click and make ``bundled_with`` a lie.
+    congestion: dict = {
+        "path": "/congestion-insights/v0/query",
+        "bundled_with": "device_status",
+        # Always attempted — it is part of the reachability step, not a call this
+        # endpoint chooses to make — so the panel can say the call happened either way.
+        "attempted": True,
+        "returned": reach.congestion_level is not None,
+        # The floor ``assess_silence`` actually applies, sent rather than restated in
+        # the UI. The panel explains the agent's behaviour, so it has to quote the
+        # agent's number; a threshold written down in two places is one that drifts.
+        "min_confidence": MIN_CONGESTION_CONFIDENCE,
+        "result": {
+            "congestion_level": reach.congestion_level,
+            "confidence_level": reach.congestion_confidence,
+        },
+    }
+    if not congestion["returned"]:
+        congestion["note"] = CONGESTION_NO_READING
+
     return {
         "endpoint_host": settings.nac_api_host,
         "device": device,
@@ -113,14 +154,7 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
         # no separate round-trip to report and we do not invent one. Named here
         # because it is a distinct CAMARA API and the panel exists to show exactly
         # which ones this really calls.
-        "congestion_insights": {
-            "path": "/congestion-insights/v0/query",
-            "bundled_with": "device_status",
-            "result": {
-                "congestion_level": reach.congestion_level,
-                "confidence_level": reach.congestion_confidence,
-            },
-        },
+        "congestion_insights": congestion,
     }
 
 

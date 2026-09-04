@@ -58,7 +58,7 @@ The moment a heartbeat stops, the agent opens an incident and investigates on it
    on and off.
 5. On a genuine fault: a diagnostic model classifies it and a component model names
    the failing part — hydraulic pump, cooling system, main bearing or alternator, at
-   88.3% accuracy. CAMARA Location Retrieval then supplies network-verified
+   88.6% accuracy. CAMARA Location Retrieval then supplies network-verified
    coordinates for a device whose own GPS is dark.
 6. Location Retrieval is called a second time, on the technicians' phones. Their
    handsets are devices on the same network, so the same API answers who is genuinely
@@ -93,7 +93,7 @@ subscription that calls us.
 
 Alongside this, a forecasting model scores the whole fleet continuously for machines
 heading toward failure. Bearing wear lifts vibration and oil-particle count days
-before engine temperature moves, so at two to three days out the model flags 93.8% of
+before engine temperature moves, so at two to three days out the model flags 92.2% of
 failures where a temperature threshold catches 19.6%. Past 72 hours neither works well
 and the threshold is marginally better; ml/metrics.json reports all five horizons.
 

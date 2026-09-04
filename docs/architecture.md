@@ -204,9 +204,9 @@ alarms actually watch — moves in the final hours.
 |---|---|---|
 | 0–24 h | 100% | 31.4% |
 | 24–48 h | **100%** | 19.9% |
-| 48–72 h | **93.8%** | 19.6% |
-| 72–96 h | 7.3% | 13.2% |
-| 96–120 h | 0% | 4.3% |
+| 48–72 h | **92.2%** | 19.6% |
+| 72–96 h | 7.3% | 13.3% |
+| 96–120 h | 0% | 4.4% |
 
 Read the whole table, including the bottom two rows where we lose. The models are
 trained at 24/48/72 h (`HORIZON_H = 72` in `ml/train.py`) against a 120-hour
@@ -218,12 +218,14 @@ Every figure here is `ml/metrics.json`, which is committed — check it.
 That baseline is **engine temperature specifically** — the channel fleets alarm on today,
 not the best threshold in our own data. The best is a rate-matched threshold on
 **vibration slope**, feature 4 of the 26 the model already receives, and past 72 hours it
-beats us: **53.7% at 72–96 h against our 7.3%**, median lead **108 h against our 72 h**.
+beats us: **54.2% at 72–96 h against our 7.3%**, median lead **102 h against our 72 h**.
 The cost is the window where dispatch is actually decided — inside 72 hours it catches
-**70–71%** against the model's **93.8–100%**, it alarms on **18 of 24** never-failing
-held-out machines against the model's **0 of 24**, and **89.8%** of its firings land in a
+**70–71%** against the model's **92.2–100%**, it alarms on **18 of 24** never-failing
+held-out machines against the model's **0 of 24**, and **90.0%** of its firings land in a
 real degradation ramp against **100%**. Earlier and much noisier. A real fleet would run
-both: the slope rule for a watch-list, the model to commit a truck.
+both: the slope rule for a watch-list, the model to commit a truck. Every figure in this
+paragraph is `ml/baselines.json`, written by `ml/baselines.py`, which measures the
+committed model on the same by-asset split.
 
 Horizon comes from asking the same question at 24 / 48 / 72 h and reporting the
 tightest one the model clears — never from the label.

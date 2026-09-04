@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Asset, DeadZone, Technician, WorkOrder } from "../types";
 
 // Mirrors nac/base.py — the operational site perimeter.
@@ -66,6 +67,52 @@ function inflate(poly: [number, number][], by: number): [number, number][] {
   });
 }
 
+type Pt = [number, number];
+
+/** Shortest distance between two segments — 0 if they cross. */
+function segGap(p: Pt, q: Pt, r: Pt, s: Pt): number {
+  const side = (a: Pt, b: Pt, c: Pt) =>
+    (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0]);
+  if (side(p, r, s) * side(q, r, s) < 0 && side(p, q, r) * side(p, q, s) < 0) return 0;
+  const ptSeg = (c: Pt, a: Pt, b: Pt) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = dx * dx + dy * dy;
+    const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / len));
+    return Math.hypot(c[0] - (a[0] + t * dx), c[1] - (a[1] + t * dy));
+  };
+  return Math.min(ptSeg(p, r, s), ptSeg(q, r, s), ptSeg(r, p, q), ptSeg(s, p, q));
+}
+
+/** Shortest distance between the boundaries of two convex polygons. */
+function polyGap(a: Pt[], b: Pt[]): number {
+  let best = Infinity;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      best = Math.min(best, segGap(a[i], a[(i + 1) % a.length], b[j], b[(j + 1) % b.length]));
+      if (best === 0) return 0;
+    }
+  }
+  return best;
+}
+
+// The outline is drawn a little outside the machines so it reads as an area rather
+// than a join-the-dots, but the padding is a want, not a right: two areas 30 px apart
+// cannot both be padded by 22 without meeting in the middle. So the padding is
+// whatever the tightest pair of areas can afford, and never more than MAX_INFLATE.
+const MAX_INFLATE = 22;
+const ZONE_CLEARANCE = 8; // visible gap left between two site outlines, in viewBox units.
+
+// Markers are ~4.6 units wide in a 900-unit viewBox — two screen pixels once the map
+// is scaled into its panel, far too small to hit — so each one carries an invisible
+// disc you actually click. MAX_HIT is the size that makes a lone machine comfortable;
+// in a cluster the disc shrinks instead (see `markers`), with no floor, because any
+// floor is a licence to overlap the neighbour again.
+const MAX_HIT = 15;
+// How far from a machine a click still counts as aimed at it, for clicks that land in
+// the gaps between discs. Beyond this the map is empty desert and nothing is selected.
+const PICK_RADIUS = 34;
+
 export function FleetMap({ assets, technicians, workOrders, deadZones, riskById = {}, selectedId, onSelect }: Props) {
   // Equirectangular with a single scale for both axes. Stretching each axis
   // independently to fill the box makes the map lie about distance — at this latitude
@@ -100,24 +147,94 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
     ];
   }, [assets, technicians]);
 
-  // Site zones are genuine: every asset carries the site it works on.
+  // Site zones are genuine, and now they are also geographic: the backend assigns a
+  // machine to the working area it is nearest to (seed.py::_SITE_AREAS), which is a
+  // Voronoi partition — convex, disjoint cells. The convex hull of the machines inside
+  // one convex cell stays inside that cell, so these outlines cannot cross. They used
+  // to, badly: sites were handed out by hashing the asset id, so all five hulls covered
+  // the whole map and two of the labels landed on top of each other.
+  //
+  // A machine that has driven off the site (the geofence beat does exactly that) is
+  // left out. It has not taken its working area with it, and including it stretched
+  // one hull clear across the map mid-demo.
   const zones = useMemo(() => {
     const bySite = new Map<string, [number, number][]>();
     for (const a of assets) {
+      if (a.offsite) continue;
       const p = project(a.latitude, a.longitude);
       const arr = bySite.get(a.site) ?? [];
       arr.push(p);
       bySite.set(a.site, arr);
     }
-    return [...bySite.entries()]
+    const raw = [...bySite.entries()]
       .filter(([, pts]) => pts.length >= 3)
-      .map(([site, pts]) => {
-        const poly = inflate(hull(pts), 22);
-        const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
-        const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
-        return { site, d: poly.map((p) => p.join(",")).join(" "), cx, cy };
-      });
+      .map(([site, pts]) => ({ site, poly: hull(pts) }));
+
+    // Pad by half of what the closest pair of areas can spare, so no amount of
+    // padding can ever make two outlines touch.
+    let gap = Infinity;
+    for (let i = 0; i < raw.length; i++) {
+      for (let j = i + 1; j < raw.length; j++) {
+        gap = Math.min(gap, polyGap(raw[i].poly, raw[j].poly));
+      }
+    }
+    const by = Number.isFinite(gap)
+      ? Math.max(0, Math.min(MAX_INFLATE, (gap - ZONE_CLEARANCE) / 2))
+      : MAX_INFLATE;
+
+    return raw.map(({ site, poly: base }) => {
+      const poly = inflate(base, by);
+      const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+      const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+      return { site, d: poly.map((p) => p.join(",")).join(" "), cx, cy };
+    });
   }, [assets, project]);
+
+  // Every marker's position, and the size of the disc that catches its clicks. A flat
+  // r=15 on all thirty was wrong: at this density the discs overlapped, and SVG
+  // hit-testing hands the click to the topmost element, so clicking a machine inside a
+  // cluster selected whichever of its neighbours happened to be drawn last. Sizing each
+  // disc to half the distance to its nearest neighbour makes overlap impossible —
+  // r_i + r_j <= d_ij for every pair — so a click inside a disc is unambiguous, and the
+  // disc you are inside is always the nearest machine, which is the same answer the
+  // map-level fallback below gives. The two rules never disagree.
+  const markers = useMemo(() => {
+    const pts = assets.map((a) => project(a.latitude, a.longitude));
+    return assets.map((a, i) => {
+      let nearest = Infinity;
+      for (let j = 0; j < pts.length; j++) {
+        if (j === i) continue;
+        nearest = Math.min(nearest, Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]));
+      }
+      const hit = Number.isFinite(nearest) ? Math.min(MAX_HIT, nearest / 2) : MAX_HIT;
+      return { id: a.id, x: pts[i][0], y: pts[i][1], hit };
+    });
+  }, [assets, project]);
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Shrinking the discs leaves gaps between them, and a click that lands in a gap
+  // should still pick the machine it was aimed at rather than nothing at all. This
+  // catches those: it converts the click into viewBox units (getScreenCTM handles the
+  // preserveAspectRatio="slice" crop) and takes the nearest machine within PICK_RADIUS.
+  const pickNearest = useCallback(
+    (e: ReactMouseEvent<SVGRectElement>) => {
+      const ctm = svgRef.current?.getScreenCTM();
+      if (!ctm) return;
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+      let best: string | null = null;
+      let bestD = PICK_RADIUS;
+      for (const m of markers) {
+        const d = Math.hypot(m.x - p.x, m.y - p.y);
+        if (d < bestD) {
+          bestD = d;
+          best = m.id;
+        }
+      }
+      if (best) onSelect(best);
+    },
+    [markers, onSelect],
+  );
 
   // A real scale bar, now that a kilometre is the same length everywhere on the map.
   const scaleBar = useMemo(() => {
@@ -139,8 +256,8 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
 
   return (
     <div className="map-wrap">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" role="img"
-           aria-label="Fleet map of the project site">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice"
+           role="group" aria-label="Fleet map of the project site">
         <defs>
           <radialGradient id="terrain" cx="42%" cy="34%" r="78%">
             <stop offset="0%" stopColor="#16202f" />
@@ -283,26 +400,45 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
           );
         })}
 
+        {/* Clicks that land between the hit discs — see pickNearest. Sits under the
+            markers so a disc, when you are inside one, still wins outright. */}
+        <rect width={W} height={H} fill="transparent" onClick={pickNearest} />
+
         {/* Assets */}
-        {assets.map((a) => {
-          const [x, y] = project(a.latitude, a.longitude);
+        {assets.map((a, i) => {
+          const { x, y, hit } = markers[i];
           const c = STATE_COLOR[a.state] ?? "#7e8798";
           const sel = a.id === selectedId;
           const alert = a.state === "silent" || a.state === "anomaly";
           const forecast = riskById[a.id];
           const risky = !!forecast;
+          const description =
+            `${a.id} — ${a.label} (${STATE_LABEL[a.state] ?? a.state})` +
+            (forecast ? ` · predicted failure in ~${forecast.horizon_hours ?? "?"}h` : "");
           return (
-            <g className="asset-marker" key={a.id} onClick={() => onSelect(a.id)}>
+            <g
+              className="asset-marker"
+              key={a.id}
+              role="button"
+              tabIndex={0}
+              aria-label={description}
+              aria-pressed={sel}
+              onClick={() => onSelect(a.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                  // Space scrolls the page otherwise, which throws the map off screen
+                  // in the middle of tabbing through the fleet.
+                  e.preventDefault();
+                  onSelect(a.id);
+                }
+              }}
+            >
               {/* The dot is 4.6 units in a 900-wide viewBox — about two pixels once
                   the map is scaled into its panel, which is far too small to hit.
-                  This invisible disc is what you actually click. */}
-              <circle cx={x} cy={y} r="15" fill="transparent" />
-              <title>
-                {`${a.id} — ${a.label} (${a.state})` +
-                  (forecast
-                    ? ` · predicted failure in ~${forecast.horizon_hours ?? "?"}h`
-                    : "")}
-              </title>
+                  This invisible disc is what you actually click, and what shows the
+                  focus ring when you tab to the machine instead. */}
+              <circle className="marker-hit" cx={x} cy={y} r={hit} fill="transparent" />
+              <title>{description}</title>
               {alert && (
                 <circle cx={x} cy={y} r="8" fill="none" stroke={c} strokeWidth="1.5">
                   <animate attributeName="r" from="6" to="20" dur="1.6s" repeatCount="indefinite" />

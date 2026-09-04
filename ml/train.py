@@ -50,6 +50,7 @@ from features import (  # noqa: E402
     DIAGNOSTIC_FEATURES,
     PROGNOSTIC_FEATURES,
     WINDOW,
+    contiguous_windows,
     diagnostic_features,
     prognostic_features,
 )
@@ -129,10 +130,18 @@ def train_diagnostic() -> dict:
 # ── 2. Prognostic model ─────────────────────────────────────────────────────
 
 
-def _build_windows(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _build_windows(
+    df: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
     """Slide a WINDOW-long window over each asset's history.
 
-    Returns (X, y, asset_ids, hours_to_failure).
+    Windows that straddle a repair gap are dropped — see ``features.contiguous_windows``.
+    An asset goes to the workshop for ~2 days after a failure and emits nothing while
+    it is there, so a window spanning that hole would have its slope/std/delta computed
+    across a repair, describing a machine that never existed. Serving applies the same
+    rule via ``features.trailing_window``; the two must not drift.
+
+    Returns (X, y, asset_ids, hours_to_failure, failing_component).
     """
     df = df.sort_values(["device_id", "timestamp"])
     X: list[list[float]] = []
@@ -141,10 +150,11 @@ def _build_windows(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
     htf: list[float] = []
     comp: list[str] = []
 
+    candidates = 0  # windows the old, gap-blind slide would have produced
     for asset_id, g in df.groupby("device_id", sort=False):
         recs = g.to_dict("records")
-        for i in range(WINDOW - 1, len(recs)):
-            window = recs[i - WINDOW + 1 : i + 1]
+        candidates += max(0, len(recs) - WINDOW + 1)
+        for i, window in contiguous_windows(recs, WINDOW):
             X.append(prognostic_features(window))
             y.append(int(recs[i]["will_fail_72h"]))
             assets.append(asset_id)
@@ -153,8 +163,13 @@ def _build_windows(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
             c = recs[i].get("failing_component", "")
             comp.append("" if pd.isna(c) else str(c))
 
+    dropped = candidates - len(X)
+    if candidates:
+        print(f"  dropped {dropped:,} of {candidates:,} windows "
+              f"({dropped / candidates:.1%}) spanning a repair gap")
+
     return (np.array(X, dtype=float), np.array(y), np.array(assets),
-            np.array(htf, dtype=float), np.array(comp))
+            np.array(htf, dtype=float), np.array(comp), dropped)
 
 
 def _temperature_baseline(df: pd.DataFrame, X_assets: np.ndarray) -> np.ndarray:
@@ -173,8 +188,9 @@ def train_prognostic() -> dict:
     print("                    (data/telemetry_history.csv)")
     print("=" * 62)
     df = pd.read_csv(HISTORY)
-    X, y, assets, htf, comp = _build_windows(df)
-    print(f"\n  {len(X):,} windows from {len(set(assets))} assets ({y.sum():,} positive)")
+    print()
+    X, y, assets, htf, comp, dropped = _build_windows(df)
+    print(f"  {len(X):,} windows from {len(set(assets))} assets ({y.sum():,} positive)")
 
     train_ids, test_ids = _split_assets(assets.tolist())
     tr = np.isin(assets, list(train_ids))
@@ -270,6 +286,9 @@ def train_prognostic() -> dict:
         "horizons_hours": horizons,
         "windows_train": int(tr.sum()),
         "windows_test": int(te.sum()),
+        # Windows discarded for straddling a repair gap. Their slope/delta features
+        # would have been computed across a workshop visit — see _build_windows.
+        "windows_dropped_repair_gap": int(dropped),
         "roc_auc": round(float(auc), 4),
         "pr_auc": round(float(ap), 4),
         "horizon_hours": HORIZON_H,

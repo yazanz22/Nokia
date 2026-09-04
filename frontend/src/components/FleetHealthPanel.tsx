@@ -53,7 +53,21 @@ export function FleetHealthPanel({
       )}
 
       {risky.map((r) => (
-        <div className="risk-row" key={r.asset_id} onClick={() => onSelect(r.asset_id)}>
+        <div
+          className="risk-row"
+          key={r.asset_id}
+          // Selecting a machine from the forecast is an action, so it has to be one for
+          // the keyboard too — a bare div with onClick is unreachable without a mouse.
+          role="button"
+          tabIndex={0}
+          onClick={() => onSelect(r.asset_id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelect(r.asset_id);
+            }
+          }}
+        >
           <div className="risk-top">
             <span className="risk-id">{r.label ?? r.asset_id}</span>
             <span className={`horizon ${horizonClass(r.horizon_hours)}`}>

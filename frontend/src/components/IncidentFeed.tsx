@@ -10,6 +10,9 @@ const LABEL: Record<string, string> = {
   // not the same event as a mechanic and a heavy component.
   sensor_confirmed: "sensor · dispatched",
   hardware_confirmed: "hardware · dispatched",
+  // Diagnosed and raised, but the whole crew is on jobs — the work order is queued
+  // and nobody is en route. Says so plainly rather than borrowing "dispatched".
+  awaiting_crew: "queued · nobody free",
   closed: "closed",
 };
 
@@ -38,7 +41,18 @@ export function IncidentFeed({
         <div
           key={i.id}
           className={`incident ${i.status}${i.id === selectedId ? " sel" : ""}`}
+          // A div that selects an incident is a button in everything but markup: without
+          // these it cannot be reached or fired from the keyboard at all.
+          role="button"
+          tabIndex={0}
+          aria-pressed={i.id === selectedId}
           onClick={() => onSelect(i.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelect(i.id);
+            }
+          }}
         >
           <div className="head">
             <span className="id">

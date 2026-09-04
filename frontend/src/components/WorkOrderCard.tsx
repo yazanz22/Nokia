@@ -12,6 +12,9 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const done = wo.status === "completed";
+  // Raised, part named, nobody assigned: the whole crew is already on jobs. Nothing
+  // about this card may read as a truck in motion.
+  const queued = wo.status === "queued";
 
   // Two separate models produce two separate numbers, and unlabelled they get read
   // as one: `confidence` is the classifier's confidence in the *fault mode*, while
@@ -43,7 +46,7 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
       <div className="wo-top">
         <span className="wo-id">
           {wo.id}
-          <span className={`wo-status ${done ? "done" : "active"}`}>
+          <span className={`wo-status ${done ? "done" : queued ? "queued" : "active"}`}>
             {wo.status.replace("_", " ")}
           </span>
         </span>
@@ -86,15 +89,28 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
         </div>
       )}
 
-      <div className="wo-eta">
-        <span className="big">{wo.eta_minutes}</span>
-        <span className="lbl">min out</span>
-        <span style={{ flex: 1 }} />
-        <span className="big" style={{ fontSize: 16 }}>
-          {wo.distance_km.toFixed(1)}
-        </span>
-        <span className="lbl">km</span>
-      </div>
+      {queued ? (
+        // Nobody is assigned, so there is no route and no ETA — the fields are zero.
+        // Printed as the usual block that reads "0 min out / 0.0 km", which looks like
+        // a technician already standing at the machine rather than one nobody has sent.
+        <div className="wo-wait">
+          <span className="wo-wait-lbl">waiting for a free technician</span>
+          <span className="wo-wait-sub">
+            The fault is confirmed and the part is named. The job is handed to the first
+            technician who finishes — nobody is en route yet.
+          </span>
+        </div>
+      ) : (
+        <div className="wo-eta">
+          <span className="big">{wo.eta_minutes}</span>
+          <span className="lbl">min out</span>
+          <span style={{ flex: 1 }} />
+          <span className="big" style={{ fontSize: 16 }}>
+            {wo.distance_km.toFixed(1)}
+          </span>
+          <span className="lbl">km</span>
+        </div>
+      )}
 
       <div className="wo-actions">
         {!done && (

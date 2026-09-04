@@ -30,26 +30,27 @@
       48.0,
       72.0
     ],
-    "windows_train": 39449,
-    "windows_test": 12987,
-    "roc_auc": 0.9997,
-    "pr_auc": 0.9983,
+    "windows_train": 37135,
+    "windows_test": 12064,
+    "windows_dropped_repair_gap": 3237,
+    "roc_auc": 0.9996,
+    "pr_auc": 0.9982,
     "horizon_hours": 72.0,
     "window_readings": 8,
     "temperature_baseline_c": 94.8,
     "detection_by_horizon": {
       "96-120h": {
         "model_detection_rate": 0.0,
-        "temperature_rule_detection_rate": 0.0425,
-        "n_windows": 588
+        "temperature_rule_detection_rate": 0.0444,
+        "n_windows": 563
       },
       "72-96h": {
-        "model_detection_rate": 0.0726,
-        "temperature_rule_detection_rate": 0.1318,
-        "n_windows": 592
+        "model_detection_rate": 0.0735,
+        "temperature_rule_detection_rate": 0.1333,
+        "n_windows": 585
       },
       "48-72h": {
-        "model_detection_rate": 0.9375,
+        "model_detection_rate": 0.9223,
         "temperature_rule_detection_rate": 0.1959,
         "n_windows": 592
       },
@@ -64,8 +65,8 @@
         "n_windows": 592
       }
     },
-    "component_accuracy": 0.8831,
-    "component_macro_f1": 0.8702,
+    "component_accuracy": 0.8857,
+    "component_macro_f1": 0.8722,
     "component_classes": [
       "hydraulic_pump",
       "cooling_system",

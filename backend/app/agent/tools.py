@@ -545,9 +545,19 @@ async def create_work_order(
         store.claim_technician(tech)
     # ── end of the critical section ─────────────────────────────────────────────
 
-    # Only worth mentioning if they were genuinely nearer than whoever we chose.
-    # Otherwise the card would state something untrue.
-    if skipped_closer is not None and skipped_km >= distance:
+    # Only worth mentioning if they were genuinely nearer than whoever we chose —
+    # nearer at the precision the operator is shown, not at full float precision.
+    # The comparison used the raw distances while both numbers are written to the work
+    # order rounded to a tenth, so someone 12.36 km out beat a chosen technician at
+    # 12.44 km — nearer by eight metres — and the card then read "Ziad Khalifeh is
+    # nearer at 12.4 km" beside an assigned technician also printed at 12.4 km. The
+    # card contradicting itself in its own two lines, on screen during the dispatch
+    # beat of the demo. Round first and compare what will actually be displayed, so
+    # the claim and the numbers under it agree. Rounding is monotonic, so this only
+    # ever suppresses that tie — a visibly nearer technician is still named.
+    distance_km = round(distance, 1)
+    skipped_display = round(skipped_km, 1)
+    if skipped_closer is not None and skipped_display >= distance_km:
         skipped_closer = None
 
     # A job already waiting on this machine is *this* job — the re-investigation that a
@@ -572,11 +582,11 @@ async def create_work_order(
         technician_id=tech.id if tech else None,
         technician_name=tech.name if tech else "",
         technician_located_via=crew_source,
-        distance_km=round(distance, 1),
+        distance_km=distance_km,
         # ~45 km/h effective across a live construction site + 10 min mobilisation.
         eta_minutes=int(round(distance / 45.0 * 60)) + 10 if tech else 0,
         nearest_skipped_name=skipped_closer.name if skipped_closer else "",
-        nearest_skipped_km=round(skipped_km, 1) if skipped_closer else 0.0,
+        nearest_skipped_km=skipped_display if skipped_closer else 0.0,
     )
     # `created_at` defaults to now, and that is deliberate on both branches. It is the
     # clock `store.advance_work_orders` runs the repair against — so it must start when

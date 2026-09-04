@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import functools
 import hashlib
+import math
 import random
 from collections import defaultdict
 from typing import Any
@@ -33,13 +34,65 @@ _KIND_PREFIX = {
     "grader": "GR",
     "loader": "LD",
 }
-_SITES = [
-    "NEOM — The Line, Sector 3",
-    "NEOM — Oxagon Port Works",
-    "NEOM — Trojena Ridge",
-    "Red Sea Global — Coastal Access Road",
-    "NEOM — Hidden Marina Cut",
-]
+# ── The five site working areas ─────────────────────────────────────────────
+#
+# A working area is a PLACE, so a machine belongs to one because of where it is
+# parked — not because of how its name hashes. Sites used to be handed out by
+# ``stable_int(asset_id + "site") % 5``, which scattered every site across the whole
+# 80 km perimeter. The dashboard draws each site as the convex hull of its machines,
+# so five interleaved sets of points produced five hulls that all covered the map and
+# all lay on top of each other: the largest feature on the map asserted a spatial
+# structure that did not exist.
+#
+# So the areas are placed first, as fixed points inside the perimeter, and each asset
+# joins whichever one it is nearest to. That is a Voronoi partition, and Voronoi cells
+# are convex and disjoint — which is exactly the property the map needs, because the
+# convex hull of the points inside a convex cell stays inside that cell. Non-overlapping
+# hulls fall out of the assignment rule rather than being patched up in the renderer.
+#
+# The centres sit where the fleet actually is (they were fitted to the demo fleet's
+# positions and then rounded), so all five areas hold machines and none of them is a
+# label floating over empty desert. Distances are measured in kilometres, not raw
+# degrees: a degree of longitude is only 0.887 of a degree of latitude here, and
+# assigning on degrees would shear every boundary east-west.
+#
+# On the naming: ``DEMO_SCRIPT.md`` puts two of these names on camera — EQ-0295 is
+# introduced as Red Sea Global / Coastal Access Road and EQ-0180 as NEOM / Trojena
+# Ridge — so the names are bound to the areas those two machines stand in. The
+# coordinates in dataset1.csv are synthetic and centred offshore of the real NEOM
+# footprint, so there is no true bearing for any of these names to respect anyway;
+# what matters is that a name now denotes one compact region instead of a fifth of
+# the whole site. Moving a centre may rename a scripted machine's site — check
+# EQ-0295 and EQ-0180 against the script before you do.
+_SITE_AREAS: tuple[tuple[str, float, float], ...] = (
+    ("NEOM — The Line, Sector 3", 27.53, 35.46),
+    ("NEOM — Oxagon Port Works", 27.73, 34.58),
+    ("NEOM — Trojena Ridge", 27.28, 34.78),
+    ("Red Sea Global — Coastal Access Road", 27.61, 35.06),
+    ("NEOM — Hidden Marina Cut", 27.11, 35.11),
+)
+
+_SITES = [name for name, _, _ in _SITE_AREAS]
+
+# Kilometres per degree at the latitude of the site, for the nearest-centre test.
+_KM_PER_LAT = 111.32
+_KM_PER_LON = 111.32 * math.cos(math.radians(27.5581))
+
+
+def site_for(latitude: float, longitude: float) -> str:
+    """Which working area a position falls in — the nearest of ``_SITE_AREAS``.
+
+    Flat-earth distance on purpose: over an 80 km site the great-circle correction is
+    far below the metre, and a plain Euclidean metric in kilometres is what makes the
+    partition Voronoi (and therefore the hulls on the map disjoint).
+    """
+    return min(
+        _SITE_AREAS,
+        key=lambda area: (
+            ((longitude - area[2]) * _KM_PER_LON) ** 2
+            + ((latitude - area[1]) * _KM_PER_LAT) ** 2
+        ),
+    )[0]
 
 # What each failing component needs on the truck.
 COMPONENT_PARTS: dict[str, tuple[str, int]] = {
@@ -167,12 +220,12 @@ def _asset_from_id(asset_id: str) -> Asset:
     ref = (normal or [r for rs in pool.values() for r in rs])[-1]
     kind = _KINDS[stable_int(asset_id) % len(_KINDS)]
     num = asset_id.split("-")[-1].lstrip("0") or "0"
-    site = _SITES[stable_int(asset_id + "site") % len(_SITES)]
     return Asset(
         id=asset_id,
         kind=kind,
         label=f"{kind.replace('_', ' ').title()} {_KIND_PREFIX[kind]}-{int(num):02d}",
-        site=site,
+        # Where it stands, not how its name hashes — see _SITE_AREAS.
+        site=site_for(ref["latitude"], ref["longitude"]),
         latitude=ref["latitude"],
         longitude=ref["longitude"],
     )
