@@ -200,7 +200,10 @@ body {
 /* ── KPI strip ───────────────────────────────────────────────────────── */
 .kpis {
   display: grid;
-  grid-template-columns: 1.25fr 1.25fr 1fr 1fr 1fr 1fr;
+  /* Two hero tiles, then one track per remaining KPI. Counted with repeat() rather
+     than written out: the geofencing work added a seventh tile against six hard-coded
+     tracks, and the orphan row came straight out of the map's height. */
+  grid-template-columns: 1.25fr 1.25fr repeat(5, 1fr);
   gap: 10px;
 }
 

@@ -158,6 +158,7 @@ class SimulatorEngine:
         settings = get_settings()
         while True:
             now = utcnow()
+            moved: list[str] = []
             for asset_id, asset in list(store.assets.items()):
                 if asset_id in self._silent:
                     continue  # heartbeat lost — emit nothing
@@ -178,6 +179,7 @@ class SimulatorEngine:
                     # Gentle positional drift so the map feels alive.
                     asset.latitude += self._rng.uniform(-0.0008, 0.0008)
                     asset.longitude += self._rng.uniform(-0.0008, 0.0008)
+                moved.append(asset_id)
                 sample = TelemetrySample(
                     asset_id=asset_id,
                     ts=now,
@@ -202,6 +204,7 @@ class SimulatorEngine:
             if callable(collect):
                 for ev in collect(list(store.assets.values())):
                     store.raise_geofence_alert(ev)
+            store.publish_positions(moved)
             store.publish_technicians()
             store.advance_work_orders()
             # The limiters keep a bucket per client IP. Nothing was calling prune(),

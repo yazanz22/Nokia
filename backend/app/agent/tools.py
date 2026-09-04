@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from ..models import FaultPrediction, TelemetrySample, Technician, WorkOrder, utcnow
-from ..nac import DeviceLocation, Reachability, get_network_client
+from ..nac import DeviceLocation, NetworkClient, Reachability, get_network_client
 from ..nac.factory import get_simulated_client
 from ..ml.client import fault_model
 from ..store import store
@@ -43,12 +43,35 @@ CONGESTION_CLEARS_NETWORK = {"None", "Low"}
 MIN_CONGESTION_CONFIDENCE = 50
 
 
+def _client_for(subject_id: str) -> NetworkClient:
+    """The client that can actually answer for this subject.
+
+    Assets and technicians are simulated. They are not SIMs on the Nokia sandbox and
+    never will be, so in live mode an unmapped subject falls through to
+    ``nac_default_device`` — the single shared test SIM, which sits in Hungary and
+    always reports ``roaming: true, country: HU``. Since ``assess_silence`` checks
+    roaming first and ``HU != SA``, every incident closed as roaming: no ML, no
+    Location Retrieval, no work order, ever, whichever scenario was injected.
+
+    A subject with a device of its own in ``NAC_DEVICE_MAP`` is asked for real. Anyone
+    else is asked of the simulation they actually live in. One helper for assets and
+    crew both, so the two rules cannot drift apart again — they already had, and only
+    the crew half was guarded.
+    """
+    from ..config import get_settings
+
+    settings = get_settings()
+    if settings.nac_mode == "live" and subject_id not in settings.device_map():
+        return get_simulated_client()
+    return get_network_client()
+
+
 async def check_device_status(asset_id: str) -> Reachability:
-    return await get_network_client().get_reachability(asset_id)
+    return await _client_for(asset_id).get_reachability(asset_id)
 
 
 async def get_device_location(asset_id: str) -> DeviceLocation:
-    return await get_network_client().get_location(asset_id)
+    return await _client_for(asset_id).get_location(asset_id)
 
 
 class SilenceVerdict(NamedTuple):
@@ -231,27 +254,19 @@ async def locate_crew(technicians: list[Technician]) -> str:
     Best effort: a technician we cannot locate keeps their last known position rather
     than dropping out of consideration.
     """
-    from ..config import get_settings
-
-    settings = get_settings()
-    client = get_network_client()
-
     # In live mode an unmapped subject would fall back to the shared sandbox device,
     # putting every technician on the same coordinates and making "nearest" meaningless.
     # A technician with a device of their own is located for real; everyone else is
-    # located against the simulation they actually exist in.
+    # located against the simulation they actually exist in. Same rule as the assets,
+    # from the same helper.
     #
     # The earlier version simply skipped them, and NAC_DEVICE_MAP is empty by default
     # — so in live mode nobody was located at all. Crews silently kept their seed
     # positions, the card quietly dropped its "network-located" tag, and the agent went
     # on narrating that it had just asked the network where they were.
-    mapped = settings.device_map()
-    live = settings.nac_mode == "live"
-    simulated = get_simulated_client()
-
     source = "seed"
     for tech in technicians:
-        subject_client = client if (not live or tech.id in mapped) else simulated
+        subject_client = _client_for(tech.id)
         try:
             loc = await subject_client.get_location(tech.id)
         except Exception:  # noqa: BLE001 - an unlocatable crew member is not fatal

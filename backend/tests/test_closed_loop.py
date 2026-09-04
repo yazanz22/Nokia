@@ -37,14 +37,47 @@ async def test_hardware_dispatches_with_part_and_technician():
     wo = wos[0]
     assert wo.technician_id is not None
     assert wo.eta_minutes > 0
-    # The part is no longer fixed: it follows from whichever component the machine's
-    # own history says is failing, and the assigned technician must be carrying it.
+    # The part is no longer fixed: where the machine's history shows a degradation
+    # ramp, the named component chooses it. Where it does not, no component is named —
+    # the component model has no "nothing is wrong" class and will otherwise invent one
+    # at 99% confidence — and the part falls back to the fault mode's default kit.
+    # Either way the assigned technician has to be carrying whatever is on the order.
     from app.seed import COMPONENT_PARTS
 
-    assert wo.part in {p for p, _ in COMPONENT_PARTS.values()}
-    assert wo.component in COMPONENT_PARTS
-    assert wo.part == COMPONENT_PARTS[wo.component][0]
+    assert wo.part
     assert wo.part in store.technicians[wo.technician_id].parts_on_hand
+    if wo.component:
+        assert wo.component in COMPONENT_PARTS
+        assert wo.part == COMPONENT_PARTS[wo.component][0]
+
+
+@pytest.mark.asyncio
+async def test_component_is_not_named_without_a_degradation_trend():
+    """A part number nobody can justify is worse than no part number.
+
+    ml/train.py fits the component model only on windows already inside a failure ramp,
+    so it has no null class: asked about a machine that is not degrading it still
+    returns its most likely component, and does so at ~99%. Measured across ~9,900
+    healthy test windows, 64% of them come back "hydraulic_pump". The prognostic score
+    is the gate, because it is the model that does have a negative class.
+    """
+    from app.ml.client import fault_model
+    from app.ml.forecast import forecast_model
+    from app.models import TelemetrySample
+
+    hot_and_silent = TelemetrySample(
+        asset_id="EQ-0005", reachable=False, telemetry_age_sec=120.0,
+        engine_temp_c=118.0, signal_strength_dbm=-70.0, neighbor_fail_count=0,
+    )
+    for asset_id in sorted(store.assets)[:8]:
+        pred = fault_model.predict(asset_id, hot_and_silent)
+        if pred.mode != "DEVICE_FAILURE" or not pred.component:
+            continue
+        score = forecast_model.score_asset(asset_id)
+        assert score is not None and score["at_risk"], (
+            f"{asset_id} was given component {pred.component!r} at "
+            f"{pred.component_confidence:.0%} with no degradation trend behind it"
+        )
 
 
 @pytest.mark.asyncio

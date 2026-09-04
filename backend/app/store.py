@@ -290,6 +290,23 @@ class Store:
     def publish_kpis(self) -> None:
         bus.publish(WsEvent(type="kpis", payload=self.kpis().model_dump(mode="json")))
 
+    def publish_positions(self, asset_ids: list[str]) -> None:
+        """Push moved assets to the map.
+
+        Technicians were published every tick and assets were not, so the machines sat
+        frozen wherever the initial snapshot put them: `TelemetrySample` carries no
+        coordinates, and the only `asset_update` publishers were a state change and a
+        geofence crossing. A machine driving off site therefore did not move at all for
+        half a minute and then jumped the whole way in one frame, when the crossing
+        fired — while the narrator described it driving.
+        """
+        for asset_id in asset_ids:
+            asset = self.assets.get(asset_id)
+            if asset is not None:
+                bus.publish(
+                    WsEvent(type="asset_update", payload=asset.model_dump(mode="json"))
+                )
+
     def publish_technicians(self) -> None:
         """Crews move and go on and off shift; the map has to see it.
 

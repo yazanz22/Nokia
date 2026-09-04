@@ -141,9 +141,14 @@ export default function App() {
               <span className="chip">
                 ML <b>{health.ml_backend}</b>
               </span>
-              <span className={`chip ${health.live_camara_available ? "live" : "off"}`}>
-                CAMARA <b>{health.live_camara_available ? "live" : "mock"}</b>
+              <span className={`chip ${health.nac_mode === "live" ? "live" : "off"}`}>
+                CAMARA <b>{health.nac_mode}</b>
               </span>
+              {health.live_camara_available && (
+                <span className="chip" title="The live sandbox check is available in the Network as Code panel">
+                  live check <b>ready</b>
+                </span>
+              )}
             </>
           )}
           <span className={`chip ${connected ? "live" : "off"}`}>

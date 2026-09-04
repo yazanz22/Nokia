@@ -5,7 +5,7 @@ from ..agent.memory import memory
 from ..anomaly import detector
 from ..events import bus
 from ..models import WsEvent
-from ..ratelimit import inject_limiter
+from ..ratelimit import inject_budget, inject_limiter
 from ..simulator import simulator
 from ..simulator.engine import DRIFT_SCENARIO, SCENARIOS
 from ..store import store
@@ -29,6 +29,7 @@ def list_scenarios() -> dict:
 @router.post("/scenarios/inject")
 def inject_scenario(req: InjectRequest, request: Request) -> dict:
     inject_limiter.check(request)
+    inject_budget.check()
     asset = store.assets.get(req.asset_id)
     if asset is None:
         raise HTTPException(404, f"unknown asset {req.asset_id}")

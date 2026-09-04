@@ -260,8 +260,8 @@ map, then move the cursor to the **Asset telemetry** panel bottom-left.
 > actually watches — is still 71 degrees. Completely normal. It won't move until the last few hours,
 > and by then you're not scheduling a repair, you're recovering from a breakdown.
 >
-> On held-out machines, two to three days out: our model catches **94%** of failures. A temperature
-> threshold catches **2%**."
+> On held-out machines, two to three days out: our model catches **93.8%** of failures. A temperature
+> threshold — what fleets actually alarm on today — catches **19.6%**."
 
 > **Read what's on screen, not these numbers.** Vibration, particle counts and the horizon differ per
 > machine and per run. The shape of the story is what's fixed: healthy *and* at risk, with the two
@@ -493,7 +493,7 @@ the dataset, and the answer is stronger than the hedge.
 **"Your forecasting AUC is basically 1.0 — isn't that too good?"**
 On synthetic data, yes, AUC is the wrong number to judge us on and we don't lead with it. The number
 we report is **warning time against the obvious baseline**: at two to three days out the model flags
-94% of failures, a temperature threshold flags 2%. That gap is a property of the physics we modelled
+93.8% of failures, a temperature threshold flags 19.6%. That gap is a property of the physics we modelled
 — vibration and oil-particle trends lead engine temperature by days — not of the classifier being
 clever. On real fleet data the absolute numbers move; the ordering of those signals doesn't.
 

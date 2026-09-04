@@ -121,9 +121,18 @@ So the forecasting model is scored on warning time, not accuracy:
 
 | hours before failure | this model | engine-temp threshold |
 |---|---|---|
-| 48–72 h | **94%** | 2% |
-| 24–48 h | **100%** | 1% |
-| 0–24 h | 100% | 18% |
+| 0–24 h | 100% | 31.4% |
+| 24–48 h | **100%** | 19.9% |
+| 48–72 h | **93.8%** | 19.6% |
+| 72–96 h | 7.3% | 13.2% |
+| 96–120 h | 0% | 4.3% |
+
+Read the whole table, including the bottom two rows where we lose. The models are
+trained at 24/48/72 h (`HORIZON_H = 72` in `ml/train.py`) against a 120-hour
+degradation ramp, so nothing was fitted to warn earlier than three days and past that
+the threshold is the better of two bad options. Inside the window it was built for,
+the model gives usable warning where the threshold gives roughly one alarm in five.
+Every figure here is `ml/metrics.json`, which is committed — check it.
 
 It answers *how soon* by asking the same question at 24 / 48 / 72 h and reporting the tightest horizon
 it clears — the estimate comes from the models, never from the label.

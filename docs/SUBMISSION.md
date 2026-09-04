@@ -91,8 +91,9 @@ subscription that calls us.
 
 Alongside this, a forecasting model scores the whole fleet continuously for machines
 heading toward failure. Bearing wear lifts vibration and oil-particle count days
-before engine temperature moves, so at two to three days out the model flags 94% of
-failures where a temperature threshold catches 2%.
+before engine temperature moves, so at two to three days out the model flags 93.8% of
+failures where a temperature threshold catches 19.6%. Past 72 hours neither works well
+and the threshold is marginally better; ml/metrics.json reports all five horizons.
 
 The agent is built with Pydantic AI driving openai/gpt-oss-120b on Groq's free tier.
 The CAMARA APIs and the ML models are registered as tools the agent decides when to

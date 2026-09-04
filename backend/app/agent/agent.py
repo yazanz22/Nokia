@@ -46,7 +46,7 @@ breakdown costs far more.
 Policy:
 0. Call `recall_history` first — if this patch of the site is a known dead zone, a
    coverage verdict needs less corroboration than it would on fresh ground.
-1. Then call `check_device_status`. `NOT_CONNECTED` is ambiguous on its own.
+1. Then call `check_device_status_tool`. `NOT_CONNECTED` is ambiguous on its own.
 2. Use `assess_coverage` to weigh serving-cell signal and neighbour-cell failures:
    - weak signal AND neighbour failures  -> coverage gap.
    - unreachable BUT strong signal, no neighbour failures -> the network is fine; the machine died.
@@ -54,7 +54,11 @@ Policy:
      cannot reach us from that operator. This is a connectivity ticket, never a mechanic.
 3. Coverage gap -> call `resolve_as_blindspot`. Do not predict faults, do not dispatch.
 4. Foreign roaming -> call `resolve_as_roaming`. Do not predict faults, do not dispatch.
-5. Otherwise -> call `predict_fault`, then `get_location`, then `dispatch_technician`.
+5. Otherwise -> call `predict_fault_tool`, then `get_location`, then `dispatch_technician`.
+
+Tool names are exact. There is no `check_device_status` and no `predict_fault` — the
+registered names are `check_device_status_tool` and `predict_fault_tool`. Calling the
+wrong name is an error that costs you one of your two retries and tells you nothing.
 
 You MUST finish by actually invoking exactly one of `resolve_as_blindspot`,
 `resolve_as_roaming` or `dispatch_technician` as a real tool call. Writing out the tool name and its arguments as
@@ -192,7 +196,16 @@ def _build_agent():
     @agent.tool
     async def predict_fault_tool(ctx: RunContext[Deps]) -> str:
         """Run the ML fault classifier on the asset's last telemetry frame."""
-        fault = predict_fault(ctx.deps.asset_id, ctx.deps._reach)  # type: ignore[arg-type]
+        # The classifier is only meaningful once we know whether the network can still
+        # see the device: `predict_fault` overlays that reality onto the last frame,
+        # which the simulator always stamps `reachable=True` because it arrived. Handed
+        # `None`, the model is asked about a machine that is both red-hot and answering
+        # — a state it never saw in training — and it answers NORMAL, which withholds
+        # the dispatch. The model is free to skip the status tool, so fetch it here.
+        d = ctx.deps
+        if d._reach is None:
+            d._reach = await check_device_status(d.asset_id)
+        fault = predict_fault(d.asset_id, d._reach)  # type: ignore[arg-type]
         ctx.deps.last_fault = fault
         await ctx.deps.tracer.step(
             "Ran the ML fault classifier.",
@@ -262,15 +275,22 @@ def _build_agent():
     async def dispatch_technician(ctx: RunContext[Deps]) -> str:
         """TERMINAL: create a work order for the predicted fault and route the nearest technician."""
         d = ctx.deps
-        fault = d.last_fault or predict_fault(d.asset_id, d._reach)  # type: ignore[arg-type]
 
         # Guards, not suggestions: terminal tools own these, so no decision the model
-        # makes can turn a healthy machine or a roaming one into a field dispatch.
+        # makes can turn a healthy machine, a roaming one or a coverage gap into a
+        # field dispatch.
         #
         # These must not depend on the model having called the assessment tool first.
         # It is free to skip straight from device status to dispatch — and when it did,
         # an earlier version of this guard silently did not fire and sent a technician
         # to a machine that had merely crossed a border. Recompute here instead.
+        #
+        # The network reality is also established *before* the classifier runs, not
+        # after. `predict_fault` overlays reachability onto the last transmitted frame,
+        # and that frame is always stamped reachable — it arrived. Classifying first
+        # and backfilling afterwards asks the model about a machine that is both
+        # overheating and still answering, and it returns NORMAL: no dispatch, to a
+        # machine that is genuinely broken.
         reach = d._reach
         if reach is None:
             reach = await check_device_status(d.asset_id)
@@ -278,6 +298,47 @@ def _build_agent():
         v = d.verdict or assess_silence(reach)  # type: ignore[arg-type]
         if v.category == "roaming_out":
             return await resolve_as_roaming(ctx)
+        # A coverage gap is the one outcome this product exists to stop a truck rolling
+        # for. The roaming guard was here and this one was not, so a blind-spot frame —
+        # the scenario the demo opens with — passed straight through: it is not NORMAL,
+        # so the check below let it by, and NETWORK_OUTAGE carries no part, so
+        # create_work_order skipped the part filter too. A technician was sent into a
+        # dead zone carrying nothing.
+        if v.category == "coverage_gap":
+            return await resolve_as_blindspot(ctx, v.explanation)
+
+        fault = d.last_fault or predict_fault(d.asset_id, reach)  # type: ignore[arg-type]
+
+        # Belt and braces behind the verdict guard: the classifier reads the radio
+        # channels itself and can call an outage that the assessment scored as
+        # ambiguous (weak signal but no neighbour failures, and no congestion reading
+        # to break the tie). There is no part for a coverage gap, so a dispatch here
+        # would arrive empty-handed.
+        if getattr(fault, "mode", None) == "NETWORK_OUTAGE":
+            recheck_at = schedule_recheck(d.asset_id, minutes=15)
+            await d.tracer.step(
+                "The classifier reads this as the network, not the machine — and there is "
+                "no part to carry to a coverage gap. Re-check scheduled, nobody sent.",
+                tool="ops.schedule_recheck",
+                args={"asset_id": d.asset_id, "at": recheck_at.isoformat()},
+                observation="no dispatch",
+            )
+            inc = store.incidents[d.incident_id]
+            store.set_asset_state(d.asset_id, "blindspot")
+            store.record_blindspot_avoided()
+            store.close_incident(
+                inc,
+                status="network_blindspot",
+                resolution=(
+                    f"Cellular blind spot (agent): the fault model attributes the silence to "
+                    f"the network at {fault.confidence:.0%} confidence. "  # type: ignore[union-attr]
+                    f"Re-check at {recheck_at:%H:%M UTC}. No technician dispatched."
+                ),
+            )
+            _remember(d.asset_id, "network_blindspot")
+            store.publish_kpis()
+            d.terminal = "blindspot"
+            return "resolved as coverage gap — dispatch withheld"
 
         if getattr(fault, "mode", None) == "NORMAL":
             recheck_at = schedule_recheck(d.asset_id, minutes=15)

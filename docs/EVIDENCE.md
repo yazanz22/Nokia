@@ -62,8 +62,8 @@ is another hour of idle crew and schedule risk.
 | **95% of organisations** implementing predictive maintenance report positive ROI | [ReliaMag](https://reliamag.com/guides/predictive-maintenance-roi-benchmarks-what-the-studies-show/) |
 
 Our contribution is not the idea of predicting failure — it is **warning time**. Measured
-on held-out machines, at two to three days out our model flags **94%** of failures where an
-engine-temperature threshold flags **2%**, because vibration and oil-particle trends move
+on held-out machines, at two to three days out our model flags **93.8%** of failures where an
+engine-temperature threshold flags **19.6%**, because vibration and oil-particle trends move
 days before temperature does. That comparison is ours and is reproducible from the repo.
 
 ---
@@ -143,7 +143,8 @@ and is stated rather than buried.
   is real and budgeted, not to size our own impact.
 - **Numbers computed from our own datasets describe the system's behaviour, not the world.**
   Both generators are in the repo; anything derived from them is a property of choices we
-  made. The 94%-versus-2% warning-time result is our model on our data.
+  made. The 93.8%-versus-19.6% warning-time result at 48–72 h is our model on our data, and
+  past 72 h the threshold beats it — `ml/metrics.json` has every horizon, including those.
 - **Not every remote asset is cellular.** Some sites run satellite or private LoRaWAN, where
   this approach does not apply. Giga-projects built with a national operator are where it does.
 - **Querying a SIM's status needs a commercial relationship with the operator holding it.**

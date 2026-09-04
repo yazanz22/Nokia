@@ -12,8 +12,16 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install Python deps first so the layer caches across code changes.
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+#
+# The LOCK file, not requirements.txt. The committed .pkl models were written by
+# scikit-learn 1.9.0, and requirements.txt is all `>=` ranges that re-resolve on every
+# rebuild. An unpickle against a different scikit-learn does not crash the container —
+# ml/client.py and ml/forecast.py catch it, log at WARNING and fall back to the rule
+# classifier and "forecasting unavailable". The demo comes up looking healthy with its
+# whole ML story quietly switched off. Check the `ML` chip reads "trained" after any
+# rebuild.
+COPY backend/requirements.lock.txt backend/requirements.lock.txt
+RUN pip install --no-cache-dir -r backend/requirements.lock.txt
 
 COPY backend/ backend/
 COPY ml/ ml/

@@ -9,7 +9,12 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
-  const target = assetId || eligible[0]?.id || "";
+  // An injected asset stops being healthy, so it drops out of `eligible` — and a
+  // `<select>` whose value matches no option renders blank, while the buttons kept
+  // printing the stale id and every further click came back 409. A blank dropdown is
+  // also the demo playbook's cue to hit "Reset fleet", which would wipe the KPI bar
+  // mid-run. Fall back to the first still-eligible machine instead.
+  const target = eligible.some((a) => a.id === assetId) ? assetId : eligible[0]?.id ?? "";
 
   const fire = async (scenario: string) => {
     if (!target) return;

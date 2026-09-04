@@ -34,8 +34,10 @@ editing the other — that's what keeps the halves looking like one deck.
 - **Gamma invents specific factual claims when a card has room, not just numbers — confirmed.**
   On the impact card it added "NEOM and Masdar City are required to report Scope 3 emissions on
   major projects" — a specific regulatory claim with no source anywhere in this prompt or in
-  `docs/EVIDENCE.md`. It also turned "94% vs 2%" into a new headline stat, "47× more impending
-  failures," by computing the ratio itself. Read every card's added sentences, not just its
+  `docs/EVIDENCE.md`. It also computed a ratio of its own from the warning-time figures and
+  put it on a card as "47× more impending failures". That ratio was never given to it, and
+  against the current numbers it would be ~4.8× — so a deck still carrying "47×" is quoting
+  a figure that was both invented and is now wrong. Read every card's added sentences, not just its
   numbers, against the source content — a plausible-sounding claim that was never given is a
   fabrication regardless of whether a number changed.
 - On a diagram slide, check reading order against the slide's own caption, not just left-to-right/
@@ -252,8 +254,10 @@ Three models, each answering a different question.
 - Which part? Component classifier — 88.3% accuracy, 0.870 macro F1, across four
   components with distinct degradation signatures. This is what turns a work order from
   "go look at it" into "bring this part".
-- When will it break? Prognostic model — catches 94% of failures 48–72 hours ahead,
-  against 2% for a conventional engine-temperature threshold on the same data.
+- When will it break? Prognostic model — catches 93.8% of failures 48–72 hours ahead,
+  against 19.6% for a conventional engine-temperature threshold on the same data.
+  (~4.8x, not 47x. Say the horizon out loud: the advantage is inside 72 hours, which is
+  what the models were trained for, and past that the threshold is slightly better.)
 Note on the last figure: that is our model on our dataset. The generators are in the repo.
 
 CARD 2 — THE AGENT LEARNS THE SITE

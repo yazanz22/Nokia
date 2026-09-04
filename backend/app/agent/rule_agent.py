@@ -105,6 +105,17 @@ async def run_rule_investigation(incident_id: str) -> None:
 
     if verdict.category == "coverage_gap":
         recheck_at = schedule_recheck(asset_id, minutes=15)
+        # CAMARA Device Status returns attachment and nothing about the radio, so
+        # against a real operator this field is None — and Congestion Insights is
+        # exactly what makes a coverage gap reachable without it. Formatting None
+        # raised a TypeError that the detector swallowed, leaving the incident stuck
+        # at "investigating" with a half-written trace and nobody ever sent.
+        sig = reach.signal_strength_dbm
+        evidence = (
+            f"{sig:.0f} dBm"
+            if sig is not None
+            else f"area congestion {reach.congestion_level or 'unavailable'}"
+        )
         await t.step(
             "Logged a cellular blind spot. Scheduling an automated re-check and notifying the "
             "operator — no field dispatch.",
@@ -119,7 +130,7 @@ async def run_rule_investigation(incident_id: str) -> None:
             status="network_blindspot",
             resolution=(
                 f"Cellular blind spot confirmed via CAMARA Device Status ({reach.status}, "
-                f"{reach.signal_strength_dbm:.0f} dBm). Re-check at {recheck_at:%H:%M UTC}. "
+                f"{evidence}). Re-check at {recheck_at:%H:%M UTC}. "
                 "No technician dispatched — false dispatch avoided."
             ),
         )
@@ -145,6 +156,36 @@ async def run_rule_investigation(incident_id: str) -> None:
             + f" (part: {fault.recommended_part or 'n/a'}). {fault.rationale}"
         ),
     )
+
+    # There is no part for a coverage gap. The verdict branch above catches the clear
+    # cases, but the classifier reads the radio channels itself and can call an outage
+    # the assessment scored as ambiguous — and PARTS_CATALOGUE["NETWORK_OUTAGE"] is
+    # empty, so create_work_order would drop the part filter and send someone with
+    # nothing. Both agents refuse it, for the same reason.
+    if fault.mode == "NETWORK_OUTAGE":
+        recheck_at = schedule_recheck(asset_id, minutes=15)
+        await t.step(
+            "The classifier attributes the silence to the network rather than the machine, "
+            "and there is no part to carry to a coverage gap. Scheduling a re-check.",
+            tool="ops.schedule_recheck",
+            args={"asset_id": asset_id, "at": recheck_at.isoformat()},
+            observation="re-check queued; operator notified; no dispatch",
+        )
+        store.set_asset_state(asset_id, "blindspot")
+        store.record_blindspot_avoided()
+        store.close_incident(
+            inc,
+            status="network_blindspot",
+            resolution=(
+                f"Cellular blind spot: the fault model attributes the silence to the network "
+                f"at {fault.confidence:.0%} confidence. Re-check at {recheck_at:%H:%M UTC}. "
+                "No technician dispatched — false dispatch avoided."
+            ),
+        )
+        memory.record(asset_id, asset.latitude, asset.longitude, "network_blindspot")
+        store.publish_kpis()
+        log.info("%s resolved as blindspot (model)", incident_id)
+        return
 
     # A dispatch is only justified if the model actually found a fault. Rolling a
     # truck to a machine that reads healthy is the same wasted journey as rolling one

@@ -7,7 +7,7 @@ from ..config import get_settings
 from ..ml.client import fault_model
 from ..nac import get_live_client, get_network_client
 from ..nac.factory import FallbackNaCClient
-from ..ratelimit import live_check_limiter
+from ..ratelimit import inject_budget, live_check_budget, live_check_limiter
 from ..store import store
 
 log = logging.getLogger("nac.geofence")
@@ -22,6 +22,7 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
     NAC_MODE, and returns the round-trip time so the latency is visible too.
     """
     live_check_limiter.check(request)
+    live_check_budget.check()
     settings = get_settings()
     client = get_live_client()
     if client is None:
@@ -105,9 +106,13 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
 
 
 @router.get("/debug/nac")
-async def debug_nac(asset_id: str) -> dict:
+async def debug_nac(asset_id: str, request: Request) -> dict:
     """Prove a Network-as-Code call end to end. With NAC_MODE=live this hits the
     Nokia sandbox and returns source='live'."""
+    # In live mode this spends sandbox quota exactly like the live-check panel does,
+    # and it was the one money-spending endpoint left wide open.
+    live_check_limiter.check(request)
+    live_check_budget.check()
     if asset_id not in store.assets:
         raise HTTPException(404, f"unknown asset {asset_id}")
     client = get_network_client()
@@ -140,6 +145,8 @@ def debug_health() -> dict:
         "last_agent_error": agent_mod.last_agent_error,
         "ml_backend": fault_model.backend,
         "memory_episodes": memory.size,
+        "scenario_budget_remaining": inject_budget.remaining,
+        "live_check_budget_remaining": live_check_budget.remaining,
         "fleet_size": len(store.assets),
         "open_incidents": sum(1 for i in store.incidents.values() if i.closed_at is None),
     }
