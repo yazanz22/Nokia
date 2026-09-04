@@ -8,7 +8,11 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
   const done = wo.status === "completed";
 
   // The list is driven by the websocket, so there is nothing to update locally —
-  // just guard against a double-click while the request is in flight.
+  // this only guards against a double-click while the request is in flight.
+  //
+  // Release it in `finally`, not just on failure. Deleting unmounts the card so it
+  // never mattered there, but completing leaves the card on screen: the flag stayed
+  // set, and the Delete button next to it — disabled={busy} — was dead from then on.
   const act = async (fn: (id: string) => Promise<unknown>) => {
     setBusy(true);
     setErr("");
@@ -16,6 +20,7 @@ export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
       await fn(wo.id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    } finally {
       setBusy(false);
     }
   };
