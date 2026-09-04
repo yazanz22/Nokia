@@ -147,7 +147,7 @@ def build_technicians() -> list[Technician]:
     lon_lo, lon_hi = min(lons), max(lons)
     all_parts = [p for p, _ in COMPONENT_PARTS.values()]
     names = [
-        "Khalid Al-Otaibi",
+        "Ziad Khalifeh",
         "Mariam Haddad",
         "Youssef Nasser",
         "Sara Al-Balushi",
