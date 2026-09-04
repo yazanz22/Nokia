@@ -100,11 +100,32 @@ across a desert site.
 
 ## Demo Link
 
-Deployed single-service build. **YOU** — paste the URL after deploying (see
-"Deploy it" in the README; `render.yaml` is ready for a one-click Render deploy).
+```
+https://nokia-rhhp.onrender.com/
+```
 
-If the deployment is not up in time, use a recorded walkthrough and say so plainly
-rather than linking something broken.
+Live single-service deployment on Render — FastAPI serving the built dashboard, one
+container behind one URL. Verified working 2026-09-04: trained ML models loaded, all
+four scenario outcomes reproduce, and the "Run live CAMARA check" panel returns real
+Nokia sandbox data (Device Status, Device Roaming Status, Congestion Insights and
+Location Retrieval).
+
+Two things a reviewer should know, both deliberate:
+
+- The **agent runs in deterministic mode** on the public URL. The LLM path is
+  identical on screen and is exercised by `scripts/scenario_smoke.py`; running it on
+  an open link would let one visitor drain a free-tier daily token budget and leave
+  the demo answering nobody.
+- The **fleet is simulated and the network layer is not.** The Nokia sandbox issues a
+  handful of test SIMs provisioned in Hungary that always report reachable, so they
+  cannot stand in for thirty machines across a NEOM-scale site. The fleet is replayed
+  telemetry served through the identical CAMARA contract; the live panel is the same
+  code path with one environment variable changed, and it is there so the integration
+  can be checked rather than taken on trust.
+
+The service sleeps after 15 minutes idle on Render's free plan and takes about a
+minute to wake, so a scheduled health check keeps it warm through the review window
+(`.github/workflows/keepalive.yml`).
 
 ## Repository URL
 
