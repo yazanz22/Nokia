@@ -14,6 +14,7 @@ from .events import bus
 from .models import (
     Asset,
     AssetState,
+    GeofenceAlert,
     Incident,
     Kpis,
     Technician,
@@ -51,11 +52,14 @@ class Store:
         self.incidents: dict[str, Incident] = {}
         self.trace: dict[str, list[TraceStep]] = {}
         self.work_orders: dict[str, WorkOrder] = {}
+        self.geofence_alerts: dict[str, GeofenceAlert] = {}
         self.latest_telemetry: dict[str, TelemetrySample] = {}
         self._incident_seq = itertools.count(1)
         self._wo_seq = itertools.count(1)
+        self._gf_seq = itertools.count(1)
         # KPI counters that persist across the session
         self.false_dispatches_avoided = 0
+        self.incidents_prevented = 0
         self.dispatches_issued = 0
         self._triage_durations: list[float] = []
         self.reset()
@@ -68,10 +72,13 @@ class Store:
         self.incidents.clear()
         self.trace.clear()
         self.work_orders.clear()
+        self.geofence_alerts.clear()
         self.latest_telemetry.clear()
         self._incident_seq = itertools.count(1)
         self._wo_seq = itertools.count(1)
+        self._gf_seq = itertools.count(1)
         self.false_dispatches_avoided = 0
+        self.incidents_prevented = 0
         self.dispatches_issued = 0
         self._triage_durations.clear()
 
@@ -221,6 +228,41 @@ class Store:
                 continue
             self.complete_work_order(wo)
 
+    def raise_geofence_alert(self, ev) -> GeofenceAlert | None:
+        """Warn that a working machine is leaving the site.
+
+        Counted as a prevented incident rather than an avoided dispatch, because
+        nothing has gone wrong yet — that is the distinction worth keeping. An
+        avoided dispatch means we correctly declined to act on a failure; this means
+        there was no failure to act on, because somebody was told in time.
+        """
+        asset = self.assets.get(ev.asset_id)
+        if asset is None:
+            return None
+        if ev.event_type == "area-entered":
+            asset.offsite = False
+            bus.publish(WsEvent(type="asset_update", payload=asset.model_dump(mode="json")))
+            return None
+
+        asset.offsite = True
+        alert = GeofenceAlert(
+            id=f"GF-{next(self._gf_seq):04d}",
+            asset_id=ev.asset_id,
+            asset_label=asset.label,
+            latitude=ev.latitude,
+            longitude=ev.longitude,
+            distance_km=ev.distance_km,
+            source=ev.source,
+        )
+        self.geofence_alerts[alert.id] = alert
+        self.incidents_prevented += 1
+        if len(self.geofence_alerts) > 50:
+            keep = sorted(self.geofence_alerts.values(), key=lambda a: a.at)[-50:]
+            self.geofence_alerts = {a.id: a for a in keep}
+        bus.publish(WsEvent(type="asset_update", payload=asset.model_dump(mode="json")))
+        bus.publish(WsEvent(type="geofence_alert", payload=alert.model_dump(mode="json")))
+        return alert
+
     def record_blindspot_avoided(self) -> None:
         self.false_dispatches_avoided += 1
 
@@ -240,6 +282,7 @@ class Store:
             fleet_availability_pct=round(100.0 * available / len(fleet), 1) if fleet else 100.0,
             open_incidents=open_incidents,
             false_dispatches_avoided=self.false_dispatches_avoided,
+            incidents_prevented=self.incidents_prevented,
             dispatches_issued=self.dispatches_issued,
             avg_triage_seconds=round(avg_triage, 1),
         )
@@ -269,6 +312,9 @@ class Store:
             "incidents": [i.model_dump(mode="json") for i in self.incidents.values()],
             "trace": {k: [s.model_dump(mode="json") for s in v] for k, v in self.trace.items()},
             "work_orders": [w.model_dump(mode="json") for w in self.work_orders.values()],
+            "geofence_alerts": [
+                a.model_dump(mode="json") for a in self.geofence_alerts.values()
+            ],
             "latest_telemetry": {
                 k: v.model_dump(mode="json") for k, v in self.latest_telemetry.items()
             },

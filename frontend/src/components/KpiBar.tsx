@@ -41,6 +41,7 @@ export function KpiBar({ kpis }: { kpis: Kpis | null }) {
     fleet_availability_pct: 100,
     open_incidents: 0,
     false_dispatches_avoided: 0,
+    incidents_prevented: 0,
     dispatches_issued: 0,
     avg_triage_seconds: 0,
   };
@@ -72,6 +73,11 @@ export function KpiBar({ kpis }: { kpis: Kpis | null }) {
         value={Math.round(issued).toString()}
         label="Dispatches issued"
         tone={k.dispatches_issued > 0 ? "hv" : "idle"}
+      />
+      <Kpi
+        value={`${k.incidents_prevented ?? 0}`}
+        label="Incidents prevented"
+        tone={(k.incidents_prevented ?? 0) > 0 ? "ok" : "idle"}
       />
       <Kpi value={`${k.fleet_availability_pct.toFixed(1)}%`} label="Fleet availability" />
       <Kpi value={`${k.available_assets}/${k.fleet_size}`} label="Assets online" />

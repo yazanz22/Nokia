@@ -15,6 +15,7 @@ import random
 from datetime import timedelta
 
 from ..config import get_settings
+from ..nac import get_network_client
 from ..models import TelemetrySample, utcnow
 from ..ratelimit import inject_limiter, live_check_limiter
 from ..store import store
@@ -31,6 +32,30 @@ SCENARIOS = {
     "roaming": "ROAMING_OUT",
 }
 
+# Not a fault at all, which is the point: the machine keeps reporting normally and
+# simply drives out of the operational area, west toward Egyptian coverage across the
+# Gulf. It never goes silent, so it never becomes an incident — the geofence is the
+# only thing that notices.
+DRIFT_SCENARIO = "offsite"
+# ~5.5 km a tick. A machine starting near the centre reaches the 80 km perimeter in
+# about half a minute — long enough that it visibly travels across the map and short
+# enough to narrate over. At 1.4 km a tick it took nearly two minutes, which is dead
+# air in a five-minute demo.
+DRIFT_STEP_DEG = 0.05
+
+
+def _reset_geofence_state() -> None:
+    """Forget which assets were outside the perimeter.
+
+    Geofencing is edge-triggered, so after a reset puts every machine back inside,
+    the client must not still believe they are out — otherwise the crossing that
+    matters is read as "no change" and never announced.
+    """
+    client = get_network_client()
+    reset = getattr(client, "reset_geofence", None)
+    if callable(reset):
+        reset()
+
 
 class SimulatorEngine:
     def __init__(self) -> None:
@@ -39,6 +64,8 @@ class SimulatorEngine:
         self._rng = random.Random(2026)
         # asset_id -> dataset label the asset is currently really experiencing
         self._pending: dict[str, str] = {}
+        # Assets being walked out of the site perimeter. They stay healthy throughout.
+        self._drifting: set[str] = set()
         # assets that have stopped emitting telemetry (heartbeat lost)
         self._silent: set[str] = set()
 
@@ -60,11 +87,22 @@ class SimulatorEngine:
         self._profiles = build_profiles(list(store.assets.keys()))
         self._pending.clear()
         self._silent.clear()
+        self._drifting.clear()
+        _reset_geofence_state()
 
     # ── scenario control (called by the /scenarios route) ────────────────
     def inject(self, asset_id: str, scenario: str) -> str:
         if asset_id not in store.assets:
             raise KeyError(asset_id)
+
+        # The machine keeps running and keeps reporting; it just drives out of the
+        # operational area. Nothing here marks it silent or pending a fault, because
+        # nothing is wrong with it — that is the whole reason the geofence has to be
+        # what catches it.
+        if scenario == DRIFT_SCENARIO:
+            self._drifting.add(asset_id)
+            return "OFFSITE_DRIFT"
+
         if scenario not in SCENARIOS:
             raise ValueError(scenario)
         label = SCENARIOS[scenario]
@@ -100,6 +138,7 @@ class SimulatorEngine:
     def clear(self, asset_id: str) -> None:
         self._pending.pop(asset_id, None)
         self._silent.discard(asset_id)
+        self._drifting.discard(asset_id)
 
     def pending_label(self, asset_id: str) -> str | None:
         """What the asset is really experiencing (dataset label), or None."""
@@ -122,9 +161,14 @@ class SimulatorEngine:
                 row = prof.next_normal()
                 if row is None:
                     continue
-                # Gentle positional drift so the map feels alive.
-                asset.latitude += self._rng.uniform(-0.0008, 0.0008)
-                asset.longitude += self._rng.uniform(-0.0008, 0.0008)
+                if asset_id in self._drifting:
+                    # Heading west, across the Gulf toward Egyptian coverage.
+                    asset.longitude -= DRIFT_STEP_DEG
+                    asset.latitude += self._rng.uniform(-0.0004, 0.0004)
+                else:
+                    # Gentle positional drift so the map feels alive.
+                    asset.latitude += self._rng.uniform(-0.0008, 0.0008)
+                    asset.longitude += self._rng.uniform(-0.0008, 0.0008)
                 sample = TelemetrySample(
                     asset_id=asset_id,
                     ts=now,
@@ -142,6 +186,13 @@ class SimulatorEngine:
                 if tech.available:
                     tech.latitude += self._rng.uniform(-0.0015, 0.0015)
                     tech.longitude += self._rng.uniform(-0.0015, 0.0015)
+            # Ask the network which machines have crossed the site boundary. In live
+            # mode these arrive at a webhook rather than being collected here; the
+            # contract and the resulting alert are the same either way.
+            collect = getattr(get_network_client(), "collect_geofence_events", None)
+            if callable(collect):
+                for ev in collect(list(store.assets.values())):
+                    store.raise_geofence_alert(ev)
             store.publish_technicians()
             store.advance_work_orders()
             # The limiters keep a bucket per client IP. Nothing was calling prune(),

@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import type {
   Asset,
   DeadZone,
+  GeofenceAlert,
   Incident,
   Kpis,
   Technician,
@@ -21,6 +22,7 @@ export interface LiveState {
   telemetryHistory: Record<string, TelemetrySample[]>;
   kpis: Kpis | null;
   deadZones: DeadZone[];
+  geofenceAlerts: Record<string, GeofenceAlert>;
 }
 
 const HISTORY_CAP = 48;
@@ -35,6 +37,7 @@ const empty: LiveState = {
   telemetryHistory: {},
   kpis: null,
   deadZones: [],
+  geofenceAlerts: {},
 };
 
 function pushHistory(
@@ -68,6 +71,9 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
         telemetryHistory: {},
         kpis: p.kpis ?? null,
         deadZones: p.dead_zones ?? [],
+        geofenceAlerts: Object.fromEntries(
+          ((p.geofence_alerts ?? []) as GeofenceAlert[]).map((a) => [a.id, a])
+        ),
       };
     }
     case "telemetry": {
@@ -106,6 +112,10 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
       const id = (ev.payload as { id: string }).id;
       const { [id]: _dropped, ...rest } = state.workOrders;
       return { ...state, workOrders: rest };
+    }
+    case "geofence_alert": {
+      const a = ev.payload as GeofenceAlert;
+      return { ...state, geofenceAlerts: { ...state.geofenceAlerts, [a.id]: a } };
     }
     case "technicians": {
       // Crews move between jobs and go on and off shift. Without this the map keeps

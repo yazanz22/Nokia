@@ -7,7 +7,7 @@ from ..events import bus
 from ..models import WsEvent
 from ..ratelimit import inject_limiter
 from ..simulator import simulator
-from ..simulator.engine import SCENARIOS
+from ..simulator.engine import DRIFT_SCENARIO, SCENARIOS
 from ..store import store
 
 router = APIRouter(tags=["scenarios"])
@@ -21,7 +21,7 @@ class InjectRequest(BaseModel):
 @router.get("/scenarios")
 def list_scenarios() -> dict:
     return {
-        "scenarios": list(SCENARIOS.keys()),
+        "scenarios": [*SCENARIOS.keys(), DRIFT_SCENARIO],
         "eligible_assets": [a.id for a in store.assets.values() if a.state in ("healthy", "anomaly")],
     }
 
@@ -32,12 +32,19 @@ def inject_scenario(req: InjectRequest, request: Request) -> dict:
     asset = store.assets.get(req.asset_id)
     if asset is None:
         raise HTTPException(404, f"unknown asset {req.asset_id}")
-    if req.scenario not in SCENARIOS:
-        raise HTTPException(422, f"unknown scenario {req.scenario!r}; try {list(SCENARIOS)}")
+    if req.scenario not in SCENARIOS and req.scenario != DRIFT_SCENARIO:
+        raise HTTPException(
+            422,
+            f"unknown scenario {req.scenario!r}; try {[*SCENARIOS, DRIFT_SCENARIO]}",
+        )
     # Injecting over an asset that is already dark would swap the dataset label
     # underneath a running investigation — the agent would read device status for
     # one fault and classify a different one. A double-clicked button must not be
     # able to produce a self-contradicting result on stage.
+    # A machine already off site is still perfectly healthy, so the healthy-state
+    # guard below would happily start a second drift on it. Refuse that instead.
+    if req.scenario == DRIFT_SCENARIO and asset.offsite:
+        raise HTTPException(409, f"{req.asset_id} has already left the site perimeter")
     if asset.state != "healthy":
         raise HTTPException(
             409,

@@ -48,6 +48,7 @@ LOCATION_PATH = "/location-retrieval/v0/retrieve"
 # metrics, so this is the only network-side evidence that a silence is the
 # network's doing rather than the machine's.
 CONGESTION_PATH = "/congestion-insights/v0/query"
+GEOFENCE_PATH = "/geofencing-subscriptions/v0.3/subscriptions"
 
 
 class NokiaNaCClient:
@@ -181,3 +182,35 @@ class NokiaNaCClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def create_geofence_subscription(self, sink: str) -> dict:
+        """Register a real boundary watch with the operator.
+
+        Push, not poll: the network calls ``sink`` when the device leaves the area,
+        which is what lets a fleet be watched without polling every machine. The
+        fleet on the dashboard is simulated and its crossings are delivered by the
+        mock, so this exists to show the subscription itself is real — the same
+        pattern as every other call here.
+        """
+        from .base import SITE_CENTER, SITE_RADIUS_KM
+
+        body = {
+            "protocol": "HTTP",
+            "sink": sink,
+            "types": ["org.camaraproject.geofencing-subscriptions.v0.area-left"],
+            "config": {
+                "subscriptionDetail": {
+                    "device": {"phoneNumber": self._default_device},
+                    "area": {
+                        "areaType": "CIRCLE",
+                        "center": {
+                            "latitude": SITE_CENTER[0],
+                            "longitude": SITE_CENTER[1],
+                        },
+                        "radius": int(SITE_RADIUS_KM * 1000),
+                    },
+                },
+                "initialEvent": False,
+            },
+        }
+        return await self._post(GEOFENCE_PATH, body)

@@ -33,6 +33,9 @@ class Asset(BaseModel):
     latitude: float
     longitude: float
     state: AssetState = "healthy"
+    # Outside the site perimeter. Not a state: the machine is still healthy and still
+    # reporting, which is exactly why catching it here is worth anything.
+    offsite: bool = False
     last_seen: datetime = Field(default_factory=utcnow)
 
 
@@ -126,6 +129,25 @@ class Technician(BaseModel):
 WorkOrderStatus = Literal["created", "assigned", "en_route", "completed"]
 
 
+class GeofenceAlert(BaseModel):
+    """A machine left the site while it was still working fine.
+
+    Deliberately not an Incident. An incident means something already went wrong and
+    needs diagnosing; this is the opposite — nothing has failed, the machine is still
+    reporting, and the point is to reach the operator while that is still true.
+    """
+
+    id: str
+    asset_id: str
+    asset_label: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    distance_km: float = 0.0
+    at: datetime = Field(default_factory=utcnow)
+    source: str = "mock"
+    acknowledged: bool = False
+
+
 class WorkOrder(BaseModel):
     id: str
     incident_id: str
@@ -159,6 +181,9 @@ class Kpis(BaseModel):
     fleet_availability_pct: float = 100.0
     open_incidents: int = 0
     false_dispatches_avoided: int = 0
+    # Machines caught leaving the site while still healthy. Distinct from an avoided
+    # dispatch: nothing failed, because somebody was warned in time.
+    incidents_prevented: int = 0
     dispatches_issued: int = 0
     avg_triage_seconds: float = 0.0
 
@@ -173,6 +198,7 @@ EventType = Literal[
     "trace_step",
     "work_order",
     "work_order_deleted",
+    "geofence_alert",
     "technicians",
     "kpis",
     "dead_zones",

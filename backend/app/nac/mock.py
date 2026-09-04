@@ -12,7 +12,15 @@ import asyncio
 import random
 
 from ..seed import asset_pool
-from .base import DeviceLocation, Reachability, _now
+from .base import (
+    SITE_CENTER,
+    SITE_RADIUS_KM,
+    DeviceLocation,
+    GeofenceEvent,
+    Reachability,
+    _now,
+    haversine_km,
+)
 
 
 class MockNaCClient:
@@ -21,6 +29,9 @@ class MockNaCClient:
     def __init__(self, latency_seconds: float = 0.6) -> None:
         self._latency = latency_seconds
         self._rng = random.Random(99)
+        # asset_id -> was it outside the perimeter last time we looked. Geofencing is
+        # edge-triggered; without this every tick would re-announce the same machine.
+        self._outside: dict[str, bool] = {}
 
     def _row_for(self, asset_id: str) -> dict:
         from ..simulator.engine import simulator  # local import avoids a cycle
@@ -120,3 +131,40 @@ class MockNaCClient:
             as_of=_now(),
             source="mock",
         )
+
+    # ── geofencing ────────────────────────────────────────────────────────
+    def collect_geofence_events(self, subjects: list) -> list[GeofenceEvent]:
+        """Deliver boundary crossings for the watched fleet.
+
+        Against a real operator these arrive unprompted at a webhook — you register
+        the area once and the network tells you. There is no external network to call
+        back into a simulated fleet, so the mock evaluates the same boundary over the
+        same positions and hands the events straight over. Identical contract, and
+        the reason the live adapter can register a genuine subscription instead.
+
+        Edge-triggered: an asset already outside is not news, and re-announcing it
+        every two seconds would bury the moment it actually crossed.
+        """
+        out: list[GeofenceEvent] = []
+        for subj in subjects:
+            km = haversine_km(subj.latitude, subj.longitude, *SITE_CENTER)
+            outside = km > SITE_RADIUS_KM
+            was_outside = self._outside.get(subj.id, False)
+            if outside == was_outside:
+                continue
+            self._outside[subj.id] = outside
+            out.append(
+                GeofenceEvent(
+                    asset_id=subj.id,
+                    event_type="area-left" if outside else "area-entered",
+                    latitude=subj.latitude,
+                    longitude=subj.longitude,
+                    distance_km=round(abs(km - SITE_RADIUS_KM), 1),
+                    at=_now(),
+                    source="mock",
+                )
+            )
+        return out
+
+    def reset_geofence(self) -> None:
+        self._outside.clear()

@@ -15,6 +15,7 @@ them apart.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
@@ -62,10 +63,47 @@ class DeviceLocation(BaseModel):
     source: Literal["live", "mock"]
 
 
+class GeofenceEvent(BaseModel):
+    """A device crossed a boundary the operator was watching for us.
+
+    CAMARA Geofencing Subscriptions is push, not poll: you register an area and the
+    network calls your sink when a device enters or leaves it. That is the whole
+    value — you learn the machine is drifting out of coverage without asking, and
+    crucially *while it is still reachable enough to tell you*.
+    """
+
+    asset_id: str
+    event_type: Literal["area-left", "area-entered"]
+    latitude: float
+    longitude: float
+    # How far past the boundary, so an operator can tell "just clipped it" from
+    # "well on its way out".
+    distance_km: float
+    at: datetime
+    source: Literal["live", "mock"]
+
+
 @runtime_checkable
 class NetworkClient(Protocol):
     async def get_reachability(self, asset_id: str) -> Reachability: ...
     async def get_location(self, asset_id: str) -> DeviceLocation: ...
+
+
+# The operational site perimeter. Every demo asset starts inside it — the furthest
+# is 74.9 km from this centre — so a machine outside has genuinely wandered rather
+# than merely been placed awkwardly. NEOM sits at the head of the Gulf of Aqaba, so
+# leaving to the west or north is leaving toward Egyptian or Jordanian coverage.
+SITE_CENTER = (27.5581, 34.9196)
+SITE_RADIUS_KM = 80.0
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
 
 
 def _now() -> datetime:

@@ -16,6 +16,9 @@ export interface Asset {
   longitude: number;
   state: AssetState;
   last_seen: string;
+  // Outside the site perimeter. Not a state — the machine is still healthy and
+  // still reporting, which is the entire reason catching it here is worth anything.
+  offsite?: boolean;
 }
 
 export interface Technician {
@@ -89,12 +92,25 @@ export interface WorkOrder {
   nearest_skipped_km: number;
 }
 
+export interface GeofenceAlert {
+  id: string;
+  asset_id: string;
+  asset_label: string;
+  latitude: number;
+  longitude: number;
+  distance_km: number;
+  at: string;
+  source: string;
+  acknowledged: boolean;
+}
+
 export interface Kpis {
   fleet_size: number;
   available_assets: number;
   fleet_availability_pct: number;
   open_incidents: number;
   false_dispatches_avoided: number;
+  incidents_prevented: number;
   dispatches_issued: number;
   avg_triage_seconds: number;
 }
@@ -116,6 +132,7 @@ export type WsEventType =
   | "trace_step"
   | "work_order"
   | "work_order_deleted"
+  | "geofence_alert"
   | "technicians"
   | "kpis"
   | "dead_zones";

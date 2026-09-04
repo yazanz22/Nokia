@@ -71,6 +71,11 @@ export default function App() {
   const technicians = useMemo(() => Object.values(state.technicians), [state.technicians]);
   const incidents = useMemo(() => Object.values(state.incidents), [state.incidents]);
   const workOrders = useMemo(() => Object.values(state.workOrders), [state.workOrders]);
+  const geofenceAlerts = useMemo(
+    () =>
+      Object.values(state.geofenceAlerts).sort((a, b) => b.at.localeCompare(a.at)),
+    [state.geofenceAlerts]
+  );
 
   // Which incident the view has already jumped to on its own. Without this the
   // effect below re-selects on every incident update — and since an investigation
@@ -260,6 +265,21 @@ export default function App() {
               <h2>Incidents</h2>
             </header>
             <div className="body">
+              {geofenceAlerts.map((a) => (
+                <div className="gf-alert" key={a.id}>
+                  <div className="gf-top">
+                    <span className="gf-id">{a.id}</span>
+                    <span className="gf-tag">perimeter · no fault</span>
+                  </div>
+                  <div className="gf-body">
+                    <b>{a.asset_label || a.asset_id}</b> has crossed the site perimeter, heading
+                    west toward Egyptian coverage across the Gulf.
+                    {a.distance_km >= 1 ? ` Now ${a.distance_km.toFixed(0)} km beyond it.` : ""} It
+                    is still healthy and still reporting — which is the point. Flagged on the way
+                    out, rather than diagnosed after it goes dark.
+                  </div>
+                </div>
+              ))}
               <IncidentFeed
                 incidents={incidents}
                 selectedId={selectedIncident}

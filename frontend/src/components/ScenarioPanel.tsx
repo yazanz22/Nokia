@@ -18,7 +18,11 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
     setErr("");
     try {
       const r = await injectScenario(target, scenario);
-      setMsg(`${r.asset_id} went dark — replaying a real ${r.dataset_label} reading.`);
+      setMsg(
+        r.dataset_label === "OFFSITE_DRIFT"
+          ? `${r.asset_id} is driving out of the site — it stays healthy the whole way.`
+          : `${r.asset_id} went dark — replaying a real ${r.dataset_label} reading.`
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -64,6 +68,11 @@ export function ScenarioPanel({ assets }: { assets: Asset[] }) {
 
       <button className="btn wide" disabled={busy || !target} onClick={() => fire("roaming")}>
         Crossed the border (roaming)
+        <span className="target">{target || "—"}</span>
+      </button>
+
+      <button className="btn wide" disabled={busy || !target} onClick={() => fire("offsite")}>
+        Leaving the site (geofence)
         <span className="target">{target || "—"}</span>
       </button>
 

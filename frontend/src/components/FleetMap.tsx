@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import type { Asset, DeadZone, Technician, WorkOrder } from "../types";
 
+// Mirrors nac/base.py — the operational site perimeter.
+const SITE_CENTER: [number, number] = [27.5581, 34.9196];
+const SITE_RADIUS_KM = 80;
+
 const W = 900;
 const H = 640;
 const PAD = 46;
@@ -241,6 +245,26 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
           );
         })}
 
+        {/* Site perimeter — the boundary the geofence watches. Drawn faintly because
+            it is context, not an alert, right up until something crosses it. */}
+        {(() => {
+          const [cx, cy] = project(SITE_CENTER[0], SITE_CENTER[1]);
+          // A degree of latitude is ~111 km, and the projection uses one scale for
+          // both axes, so the radius converts cleanly to pixels.
+          const [, edgeY] = project(SITE_CENTER[0] + SITE_RADIUS_KM / 111, SITE_CENTER[1]);
+          const r = Math.abs(cy - edgeY);
+          return (
+            <g opacity="0.5">
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#4a5878" strokeWidth="1.2"
+                      strokeDasharray="7 6" />
+              <text x={cx} y={cy - r - 6} textAnchor="middle" fill="#5d6980" fontSize="9.5"
+                    fontFamily="Barlow Condensed, sans-serif" letterSpacing="1.4">
+                SITE PERIMETER · {SITE_RADIUS_KM} km
+              </text>
+            </g>
+          );
+        })()}
+
         {/* Technicians */}
         {technicians.map((t) => {
           const [x, y] = project(t.latitude, t.longitude);
@@ -295,6 +319,9 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
                 <circle cx={x} cy={y} r="9" fill="none" stroke="var(--warn, #f0a830)"
                         strokeWidth="1.3" strokeDasharray="2.5 2.5" opacity="0.9" />
               )}
+              {a.offsite && (
+                <circle cx={x} cy={y} r="10" fill="none" stroke="#5aa9e6" strokeWidth="1.6" />
+              )}
               {sel && <circle cx={x} cy={y} r="11" fill="none" stroke="#ff9e2c" strokeWidth="1.5" />}
               <circle cx={x} cy={y} r={sel ? 6 : 4.6} fill={c} stroke="#0a1018" strokeWidth="1.5" />
               {(sel || alert) && (
@@ -338,6 +365,12 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
             {STATE_LABEL[k]}
           </span>
         ))}
+        {assets.some((a) => a.offsite) && (
+          <span title="Still healthy and reporting — but outside the site perimeter.">
+            <i className="ring-solid" />
+            left the site
+          </span>
+        )}
         {Object.keys(riskById).length > 0 && (
           <span title="Running normally now; the forecast model expects a failure.">
             <i className="ring" />
