@@ -48,6 +48,14 @@ async def lifespan(app: FastAPI):
     finally:
         await detector.stop()
         await simulator.stop()
+        # The live adapter holds an httpx client. Nothing was closing it, so every
+        # reload leaked its connection pool.
+        from .nac.factory import get_live_client
+
+        live = get_live_client()
+        closer = getattr(live, "aclose", None)
+        if callable(closer):
+            await closer()
 
 
 app = FastAPI(title="FILO Asset Sentinel", version="0.1.0", lifespan=lifespan)

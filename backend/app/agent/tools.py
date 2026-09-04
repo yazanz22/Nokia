@@ -13,6 +13,7 @@ from typing import NamedTuple
 
 from ..models import FaultPrediction, TelemetrySample, Technician, WorkOrder, utcnow
 from ..nac import DeviceLocation, Reachability, get_network_client
+from ..nac.factory import get_simulated_client
 from ..ml.client import fault_model
 from ..store import store
 
@@ -235,18 +236,24 @@ async def locate_crew(technicians: list[Technician]) -> str:
     settings = get_settings()
     client = get_network_client()
 
-    # In live mode an unmapped subject falls back to the shared sandbox device, which
-    # would put every technician on the same coordinates and make "nearest" meaningless.
-    # Only locate crew with a device of their own; the rest keep their last position.
+    # In live mode an unmapped subject would fall back to the shared sandbox device,
+    # putting every technician on the same coordinates and making "nearest" meaningless.
+    # A technician with a device of their own is located for real; everyone else is
+    # located against the simulation they actually exist in.
+    #
+    # The earlier version simply skipped them, and NAC_DEVICE_MAP is empty by default
+    # — so in live mode nobody was located at all. Crews silently kept their seed
+    # positions, the card quietly dropped its "network-located" tag, and the agent went
+    # on narrating that it had just asked the network where they were.
     mapped = settings.device_map()
     live = settings.nac_mode == "live"
+    simulated = get_simulated_client()
 
     source = "seed"
     for tech in technicians:
-        if live and tech.id not in mapped:
-            continue
+        subject_client = client if (not live or tech.id in mapped) else simulated
         try:
-            loc = await client.get_location(tech.id)
+            loc = await subject_client.get_location(tech.id)
         except Exception:  # noqa: BLE001 - an unlocatable crew member is not fatal
             continue
         tech.latitude = loc.latitude

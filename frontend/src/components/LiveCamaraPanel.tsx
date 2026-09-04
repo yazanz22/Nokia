@@ -7,6 +7,14 @@ interface LiveResult {
   device_status: { path: string; latency_ms: number; result: any };
   location_retrieval: { path: string; latency_ms: number; result: any };
   congestion_insights?: { path: string; bundled_with: string; result: any };
+  geofencing?: {
+    path: string;
+    status: string;
+    subscription_id?: string;
+    count?: number;
+    note?: string;
+    error?: string;
+  };
 }
 
 /**
@@ -128,6 +136,28 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
                     evidence. The sandbox returns a fresh synthetic reading per call.
                   </div>
                 )}
+            </div>
+          )}
+
+          {res.geofencing && (
+            <div className="live-call">
+              <div className="live-call-head">
+                <span className="badge-live">LIVE</span>
+                <span className="path">Geofencing Subscriptions v0.3</span>
+                <span className="lat">push</span>
+              </div>
+              <div className="kv">
+                <span className="k">perimeter watch</span>
+                <span className="v">
+                  {res.geofencing.status}
+                  {res.geofencing.subscription_id
+                    ? ` · ${res.geofencing.subscription_id.slice(0, 8)}`
+                    : ""}
+                </span>
+              </div>
+              {res.geofencing.note && (
+                <div className="hint" style={{ marginTop: 4 }}>{res.geofencing.note}</div>
+              )}
             </div>
           )}
 

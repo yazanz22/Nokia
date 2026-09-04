@@ -62,7 +62,25 @@ class FallbackNaCClient:
 
 _client: NetworkClient | None = None
 _live: NetworkClient | None = None
+_mock: MockNaCClient | None = None
 _live_tried = False
+
+
+def get_simulated_client() -> MockNaCClient:
+    """The dataset-backed client, whatever NAC_MODE says.
+
+    Assets and technicians are simulated in both modes — they are not devices on the
+    sandbox and never will be — so anything asking where a *simulated* subject is has
+    to ask this one. Reaching for the live client instead gets nothing useful and,
+    worse, gets it silently.
+
+    Deliberately a singleton: the geofence edge state lives on this object, and a
+    second instance would believe every machine was still inside the perimeter.
+    """
+    global _mock
+    if _mock is None:
+        _mock = MockNaCClient()
+    return _mock
 
 
 def get_network_client() -> NetworkClient:
@@ -71,7 +89,7 @@ def get_network_client() -> NetworkClient:
     if _client is not None:
         return _client
     settings = get_settings()
-    mock = MockNaCClient()
+    mock = get_simulated_client()
     if settings.nac_mode == "live":
         live = get_live_client()
         if live is not None:
@@ -119,7 +137,8 @@ def get_live_client() -> NetworkClient | None:
 
 
 def reset_network_client() -> None:
-    global _client, _live, _live_tried
+    global _client, _live, _mock, _live_tried
     _client = None
     _live = None
+    _mock = None
     _live_tried = False

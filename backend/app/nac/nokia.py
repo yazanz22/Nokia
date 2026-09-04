@@ -183,6 +183,13 @@ class NokiaNaCClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def _post_list_subscriptions(self) -> list:
+        """Existing perimeter watches. Named for symmetry with the POST below."""
+        resp = await self._client.get(GEOFENCE_PATH)
+        resp.raise_for_status()
+        body = resp.json()
+        return body if isinstance(body, list) else body.get("subscriptions", [])
+
     async def create_geofence_subscription(self, sink: str) -> dict:
         """Register a real boundary watch with the operator.
 
