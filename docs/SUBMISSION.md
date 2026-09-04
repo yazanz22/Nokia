@@ -64,10 +64,20 @@ The moment a heartbeat stops, the agent opens an incident and investigates on it
    routes to the nearest technician actually carrying that part — and records, in
    plain language, when a closer technician was passed over for not carrying it.
 
-So the agent orchestrates two CAMARA API families across three distinct network
-signals — Device Reachability Status, Device Roaming Status, Location Retrieval — and
-makes four network calls per hardware incident, deciding for itself which to make and
-in what order.
+It also calls CAMARA Congestion Insights, which is what makes the coverage verdict
+work against a real operator rather than only against our simulation. Device Status
+reports attachment and nothing about radio conditions, so signal strength and
+neighbour-cell counts arrive empty from a live network. Congestion Insights grades the
+serving area instead of the device — so it still answers when the device is dark. A
+machine that goes silent into a cell the operator already reports as congested is a
+network failing; low congestion clears the network and sharpens the hardware verdict.
+Where both sources exist the device-specific radio metrics win, because congestion only
+ever describes the neighbourhood.
+
+So the agent orchestrates three CAMARA API families across four distinct network
+signals — Device Reachability Status, Device Roaming Status, Congestion Insights and
+Location Retrieval — and makes five network calls per hardware incident, deciding for
+itself which to make and in what order.
 
 Alongside this, a forecasting model scores the whole fleet continuously for machines
 heading toward failure. Bearing wear lifts vibration and oil-particle count days

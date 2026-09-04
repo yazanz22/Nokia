@@ -334,28 +334,29 @@ desert site, and a live location lookup would route every dispatch to Budapest. 
 CAMARA contract, one environment variable apart. **Never claim the fleet is live.**
 
 **"Would this behave the same against the live network, or only against your mock?"**
-Mostly the same, and it is worth being precise about the one difference rather than waving at it.
+Yes, and the reason is worth giving in full, because the obvious objection is a good one.
 
-CAMARA Device Status answers *is this SIM attached*; Device Roaming Status answers *whose network
-is it on*. Neither returns radio metrics — no serving-cell signal strength, no neighbour-cell
-failure count. Our live adapter leaves those fields null rather than inventing a zero, and you can
-see that in `nac/nokia.py`.
+CAMARA Device Status answers *is this SIM attached* and nothing about radio conditions — no
+serving-cell signal, no neighbour-cell failure count. So a fair challenge is: if those two numbers
+are what separate a coverage hole from a dead engine, and a real operator never returns them, how
+does the blind spot work outside your simulation?
 
-Four of the five outcomes are unaffected. Roaming is a genuine live call. The reachable paths —
-transient dropout, sensor fault, hardware fault — all still run, because they turn on the ML model
-rather than on the radio numbers. The one that cannot fire from live Device Status alone is the
-**blind spot**, because separating "the network dropped it" from "the machine died" is precisely
-what those two numbers do.
+It works because we ask a third API a different question. **Congestion Insights** grades the
+*serving area* rather than the device — which means it still answers when the device is dark. A
+machine that goes quiet into a cell the operator already reports as congested is a network
+failing, not a machine failing. And the reverse is just as useful: low congestion clears the
+network, which makes the hardware verdict stronger rather than weaker. You can watch that call
+happen in the **Run live CAMARA check** panel — real level, real confidence, from the sandbox.
 
-In production they do not come from CAMARA at all — they come from the machine. A device reports
-its own signal conditions in the last telemetry frame it sends *before* it goes dark, which is the
-same frame we already classify on; in our dataset they are explicit columns for exactly that
-reason. So the production wiring is: radio conditions from the last transmitted frame, attachment
-and roaming from the operator. CAMARA supplies the half the machine cannot — whether the network
-can still see it. That split is the architecture, not a workaround.
+Where both sources exist we prefer the radio metrics, because those describe *this device* at the
+moment it went silent while congestion only ever describes the neighbourhood. Congestion is the
+fallback, never the override — letting a busy cell excuse a broken machine is the expensive
+mistake.
 
-If you wanted it fully network-side, Congestion Insights on the same Nokia platform is the natural
-addition. That is roadmap, not something we claim today.
+Those radio numbers, incidentally, do not need to come from CAMARA at all in production: a device
+reports its own signal conditions in the last frame it sends *before* going dark, which is the
+same frame our classifier already reads. Radio conditions from the machine, attachment, roaming
+and congestion from the operator. That split is the architecture, not a workaround.
 
 **"Which part of this is the AI agent, exactly?"**
 The orchestration. The agent decides *whether* to call Device Status, *how to weigh* conflicting

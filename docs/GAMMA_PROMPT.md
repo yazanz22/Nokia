@@ -157,7 +157,7 @@ Jordanian networks. Border roaming is a real event on this site, not a hypotheti
 and it is invisible to every on-board sensor.
 
 CARD 8 — THE CAMARA APIS
-Two API families. Three network signals. Four calls per incident.
+Three API families. Four network signals. Five calls per incident.
 1. Device Reachability Status — the truth layer. The authoritative answer to "is this
    device still on the network?" the moment telemetry stops. It converts an ambiguous
    silence into a decision.
@@ -167,7 +167,13 @@ Two API families. Three network signals. Four calls per incident.
    operator; its telemetry APN then stops routing to us while every on-board sensor
    reads perfectly normal. Invisible to the device. Invisible to reachability. Only the
    operator's roaming view reveals it.
-3. Location Retrieval — used twice, for two different questions. Once for the silent
+3. Congestion Insights — the evidence that survives a dark device. Device Status
+   reports attachment and nothing about radio conditions, so against a real operator
+   signal strength and neighbour-cell counts arrive empty. This grades the serving
+   area instead of the device, which is why it still answers when the device has gone
+   silent: a machine that goes quiet into a cell the operator already reports as
+   congested is a network failing, not a machine failing.
+4. Location Retrieval — used twice, for two different questions. Once for the silent
    machine, whose own GPS is dark or untrustworthy. Once for the crew: a technician's
    phone is a device on the same network, so the same call answers who is genuinely
    nearest right now, not who the roster listed this morning.
