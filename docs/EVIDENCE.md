@@ -22,6 +22,7 @@ nothing wrong a **"no fault found" (NFF)** — the exact trip this system exists
 | **NFF rate of 17–20%** of all dispatches | [TechSee](https://techsee.com/blog/save-millions-lowering-no-fault-found-nff-dispatch-rate/) — *the vendor's own experience, not a third-party study; they note technicians under-report it* |
 | **25% of service calls need at least one additional visit** | Aberdeen Group (2013), quoted in [Automation Anywhere](https://www.automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service) |
 | **75–85% first-visit completion** is common | [XOi](https://xoi.io/blog/truck-roll-optimization-field-service) — vendor |
+| A technician completes **2–5 truck rolls per day** | [Smarty](https://www.smarty.com/articles/truck-roll-costs) — vendor; and note the page words it as an assumption ("we're *assuming*"), not a measurement, and says *telecom* rather than field service generally |
 | By 2025, **two-thirds of field service work** automatically scheduled by algorithms | Gartner, quoted in [Automation Anywhere](https://www.automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service) — a *forecast* made for 2025, cited here in 2026; we have not verified whether it landed, so we use it as evidence that the industry expected this shift, not that it happened |
 
 The worked example both sources use: an operator running **1,000 dispatches a day** over
@@ -181,21 +182,76 @@ that standard APIs are what make crossing it automatically portable across opera
 **Illustrative arithmetic, not a measurement.** Written out so the assumptions are visible
 and arguable rather than hidden inside a headline number.
 
-Take a 500-machine fleet — the size of our dataset — where each machine raises one
-"went silent" alert a month:
+### Inputs, and whose they are
 
-- 500 alerts/month
-- × roughly **20%** that turn out to be connectivity rather than hardware *(industry NFF analogue — our assumption, and the weakest link here)*
-- ≈ **100 avoidable dispatches/month**
-- × **$250–$1,000** per truck roll
-- = **$25,000–$100,000/month**, or roughly **$300k–$1.2M/year** in trips never taken
+| Input | Value | Whose |
+|---|---|---|
+| Cost per truck roll | $250–$600, up to $1,000 | Sourced — Automation Anywhere |
+| NFF rate | 17–20% of dispatches | Sourced — TechSee (vendor, telecom, self-reported) |
+| Truck rolls per technician per day | 2–5 | Sourced — Smarty (vendor, telecom, stated as an assumption) |
+| Working days per year | 252 | Convention |
+| Unplanned downtime | $3,200–$8,700 per machine per day | Sourced — FleetRabbit (vendor) |
+| Unplanned vs planned repair | 3–5× more expensive | Sourced — For Construction Pros |
+| Predictive maintenance impact | 18–25% lower cost, up to 50% less downtime | Sourced — McKinsey |
+| **Share of false dispatches we prevent** | **40%** | **Ours. A target, not a measurement — we have run no field trial.** |
 
-Separately, on the downtime side: catching a failure days early rather than hours turns an
-emergency repair into a planned one — **4–5× cheaper on the same asset** — against a
-backdrop of **$3,200–$8,700 per machine per day** when a machine stops unexpectedly.
+### Fleet volumes are our arithmetic, not a citation
 
-Every input above is someone else's published figure except the alert rate, which is ours
-and is stated rather than buried.
+`technicians × rolls/day` is multiplication, not a published finding. None of the truck-roll
+sources tiers its figures by fleet size, so the volumes below are ours and are shown as
+such — a reader who disagrees with the headcount can substitute their own.
+
+### Stream 1 — dispatches never taken
+
+`techs × rolls/day × 252 × NFF% × $/roll × 40% captured`
+
+| Fleet | Case | Rolls/yr | NFF/yr | NFF exposure | We save |
+|---|---|---|---|---|---|
+| Small — 5 techs | conservative | 2,520 | 428 | $107k | **$43k** |
+| | **midpoint** | 4,410 | 816 | $347k | **$139k** |
+| | upper | 6,300 | 1,260 | $1.26M | $504k |
+| Mid-sized — 30 techs | conservative | 15,120 | 2,570 | $643k | **$257k** |
+| | **midpoint** | 26,460 | 4,895 | $2.08M | **$832k** |
+| | upper | 37,800 | 7,560 | $7.56M | $3.02M |
+| Large — 200 techs | conservative | 100,800 | 17,136 | $4.28M | **$1.71M** |
+| | **midpoint** | 176,400 | 32,634 | $13.87M | **$5.55M** |
+| | upper | 252,000 | 50,400 | $50.4M | $20.16M |
+
+Cases are: conservative = 2 rolls/day, 17% NFF, $250/roll. Midpoint = 3.5, 18.5%, $425.
+Upper = 5, 20%, $1,000.
+
+**We quote the midpoint.** The upper case stacks every optimistic assumption at once and is
+included only to bound the range honestly, not to be used. A $50M headline would discredit
+the figures either side of it.
+
+### Stream 2 — downtime avoided
+
+The forecaster gives roughly **72 hours of warning where a temperature threshold gives 6**
+(`ml/baselines.json`), which converts an emergency repair into a planned one — and unplanned
+work costs 3–5× planned.
+
+| Per failure event caught early | Saving |
+|---|---|
+| 1 downtime day avoided | $3,200–$8,700 |
+| 2 downtime days avoided | $6,400–$17,400 |
+
+Deliberately **not** multiplied by a fleet-wide failure rate. We could not source one, and
+inventing it would make the total soft in a way the reader could not see. Stated per event so
+an operator can apply their own rate.
+
+### What it can be sold for
+
+| Price | 500-asset fleet | Against the mid-sized midpoint saving |
+|---|---|---|
+| $15/asset/month | $90k/yr | ~9× |
+| $30/asset/month | $180k/yr | ~4.6× |
+| $50/asset/month | $300k/yr | ~2.8× |
+
+At $30 per asset per month the system pays for itself on avoided dispatches alone, before any
+downtime saving is counted.
+
+Every input above is someone else's published figure except the capture rate, the fleet
+headcounts and the price points, which are ours and are labelled rather than buried.
 
 ---
 
@@ -229,6 +285,15 @@ and is stated rather than buried.
   autonomy and loop closure — not a benchmark, and not a claim of an empty market.
 - **Not every remote asset is cellular.** Some sites run satellite or private LoRaWAN, where
   this approach does not apply. Giga-projects built with a national operator are where it does.
+- **The fleet-scale dispatch volumes are our arithmetic, not a published finding.** None of the
+  truck-roll sources tiers its figures by headcount; we multiplied a sourced per-technician rate
+  by fleet sizes we chose. The rate itself carries two caveats of its own — its source words it
+  as an assumption rather than a measurement, and it describes telecom rather than construction.
+  Both are stated where the figure is used.
+- **Every cost input we use comes from a vendor selling something adjacent** — dispatch
+  reduction, remote assistance, fleet software. That does not make the figures wrong, but each
+  supplier has an interest in the number being large, so each is labelled at the point of use
+  and none is presented as an independent study.
 - **Querying a SIM's status needs a commercial relationship with the operator holding it.**
   Straightforward, but real plumbing for a contractor running mixed fleets across carriers.
 - **Oil-particle counts are not usually a live feed.** Vibration is standard telemetry
