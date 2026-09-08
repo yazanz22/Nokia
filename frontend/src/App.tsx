@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AgentTrace } from "./components/AgentTrace";
-import { AssetDrawer } from "./components/AssetDrawer";
-import { FleetHealthPanel } from "./components/FleetHealthPanel";
-import { FleetMap } from "./components/FleetMap";
-import { IncidentFeed } from "./components/IncidentFeed";
-import { KpiBar } from "./components/KpiBar";
-import { LiveCamaraPanel } from "./components/LiveCamaraPanel";
-import { ScenarioPanel } from "./components/ScenarioPanel";
-import { WorkOrderCard } from "./components/WorkOrderCard";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "./components/AppShell";
+import { DashboardTab } from "./tabs/DashboardTab";
+import { AssetsTab } from "./tabs/AssetsTab";
+import { MaintenanceTab } from "./tabs/MaintenanceTab";
+import { IncidentsTab } from "./tabs/IncidentsTab";
+import { InventoryTab } from "./tabs/InventoryTab";
+import { SimulationTab } from "./tabs/SimulationTab";
 import { getFleetHealth, getHealth } from "./lib/api";
+import { useRoute, type TabId } from "./lib/router";
+import { useTheme } from "./lib/theme";
 import { useLiveState } from "./lib/ws";
+import { REORDER_AT } from "./lib/format";
 import type { RiskRow } from "./types";
 
 interface Health {
@@ -22,43 +23,50 @@ interface Health {
 
 export default function App() {
   const { state, connected } = useLiveState();
+  const route = useRoute();
+  const { choice, cycle } = useTheme();
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
-  const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  // The live sandbox panel is proof, not a working surface — it earns its space during
-  // the API part of a demo and is in the way for the rest of it.
-  const [nacOpen, setNacOpen] = useState(true);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
 
-  // Fetched here rather than inside the predictive panel so the map can draw the
-  // same forecast. A machine can be streaming perfectly and still be a day from a
-  // bearing failure; showing that only in a side panel made the map say "healthy"
-  // about a machine the tool had just called critical.
+  // The forecast, fetched once here and shared, so the map, the fleet table and the
+  // maintenance board are all drawing the same numbers. Two components fetching it
+  // separately is how the map once called a machine healthy that the predictive panel
+  // had just put a day from failure.
   const [risk, setRisk] = useState<RiskRow[]>([]);
+  // Whether the forecast answered at all, carried separately from what it said.
+  // Collapsing both into an empty array meant a model that failed to load was
+  // presented to the operator as "nothing is forecast to fail" - the pitch's
+  // central claim, silently inverted, with nothing on screen to say otherwise.
   const [riskAvailable, setRiskAvailable] = useState(true);
-  const [atRisk, setAtRisk] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
-      getFleetHealth()
+    // Generation guard: if one poll outlives the 30s interval, a stale response
+    // must not overwrite a newer one and stick until the next tick.
+    let gen = 0;
+    const load = () => {
+      const mine = ++gen;
+      return getFleetHealth()
         .then((d) => {
-          if (cancelled) return;
-          setRiskAvailable(d.available);
-          setAtRisk(d.at_risk ?? 0);
-          setRisk(d.assets ?? []);
+          if (cancelled || mine !== gen) return;
+          setRiskAvailable(!!d.available);
+          setRisk(d.available ? (d.assets ?? []) : []);
         })
-        .catch(() => setRiskAvailable(false));
+        .catch(() => {
+          if (cancelled || mine !== gen) return;
+          setRiskAvailable(false);
+          setRisk([]);
+        });
+    };
     load();
-    // Not because the scores drift — they cannot. The forecast is cut at a fixed
-    // FORECAST_AS_OF and no live telemetry reaches it, so a given machine's number is
-    // the same all session. What moves is *which* machines are scored: one dispatched,
-    // gone silent or ruled a blindspot drops out of the roster, and one back from a
-    // work order rejoins it. Loading once left the panel listing machines a technician
-    // was already driving to. The endpoint is cached server-side on that same roster,
-    // so a poll that finds nothing changed costs nothing.
+    // Not because the scores drift: the forecast is cut at a fixed instant and no live
+    // telemetry reaches it, so a machine's number is the same all session. What moves
+    // is which machines are scored. A dispatched or silent machine drops off the
+    // roster and one back from a repair rejoins it, and the endpoint is cached
+    // server-side on exactly that roster, so a poll that finds nothing changed is free.
     const timer = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;
@@ -66,270 +74,75 @@ export default function App() {
     };
   }, []);
 
-  const riskById = useMemo(() => {
-    const m: Record<string, RiskRow> = {};
-    for (const r of risk) if (r.at_risk) m[r.asset_id] = r;
-    return m;
-  }, [risk]);
+  // Selecting a machine on the map or in the table is a cross-tab selection: click a
+  // row on Assets, switch to Dashboard, and the map still has it. One piece of state
+  // rather than one per tab, because the alternative is two tabs disagreeing about
+  // which machine you are looking at.
+  const onSelectAsset = useCallback((id: string) => setSelectedAsset(id), []);
 
-  const assets = useMemo(() => Object.values(state.assets), [state.assets]);
-  const technicians = useMemo(() => Object.values(state.technicians), [state.technicians]);
-  const incidents = useMemo(() => Object.values(state.incidents), [state.incidents]);
-  const workOrders = useMemo(() => Object.values(state.workOrders), [state.workOrders]);
-  const geofenceAlerts = useMemo(
-    () =>
-      Object.values(state.geofenceAlerts).sort((a, b) => b.at.localeCompare(a.at)),
-    [state.geofenceAlerts]
+  const openIncidents = useMemo(
+    () => Object.values(state.incidents).filter((i) => i.closed_at === null).length,
+    [state.incidents]
   );
 
-  // Which incident the view has already jumped to on its own. Without this the
-  // effect below re-selects on every incident update — and since an investigation
-  // emits a stream of them, anything the operator clicked was yanked back within
-  // a second. Selecting a machine simply did not work while the agent was busy.
-  const followed = useRef<string | null>(null);
-
-  // Follow the live incident so the trace shows without anyone clicking — but only
-  // when it is genuinely new. A machine going dark should take over the screen; an
-  // investigation already on screen should not keep stealing it back.
-  useEffect(() => {
-    if (incidents.length === 0) {
-      // A reset empties the board *and* restarts the backend's incident numbering at
-      // INC-0001. Leaving the ref set meant the second demo run's first incident was
-      // read as one already followed, so the map and the drawer stayed on the machine
-      // from the previous run while the agent investigated a different one on stage.
-      followed.current = null;
-      setSelectedIncident(null);
-      return;
-    }
-    const active = incidents.find((i) => i.closed_at === null);
-    if (active) {
-      if (followed.current !== active.id) {
-        followed.current = active.id;
-        setSelectedIncident(active.id);
-        setSelectedAsset(active.asset_id);
+  // Depot lines at or below their reorder point. Computed from the websocket rather
+  // than the inventory endpoint so the badge is live without that tab being open,
+  // but against the same per-part reorder points the backend uses - a flat "<= 1"
+  // rule counted a different set of lines from the Inventory tab's own header, so
+  // the two badges for one concept visibly disagreed.
+  const lowStock = useMemo(() => {
+    let n = 0;
+    for (const wh of Object.values(state.warehouses)) {
+      for (const [part, units] of Object.entries(wh.stock)) {
+        if (units <= (REORDER_AT[part] ?? 1)) n += 1;
       }
-      return;
     }
-    setSelectedIncident((cur) => {
-      if (cur) return cur;
-      return [...incidents].sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0]?.id ?? null;
-    });
-  }, [incidents]);
+    return n;
+  }, [state.warehouses]);
 
-  const traceIncidentId =
-    selectedIncident ??
-    [...incidents].sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0]?.id ??
-    null;
-  const traceSteps = traceIncidentId ? state.trace[traceIncidentId] ?? [] : [];
-  const traceIncident = traceIncidentId ? state.incidents[traceIncidentId] : undefined;
-  const investigating = traceIncident?.closed_at === null;
-  // Scoped to the incident on screen, and left empty when that incident dispatched
-  // nobody. Falling back to every work order made a blind-spot incident — the one
-  // whose whole point is that no truck rolled — display the hardware incident's
-  // technician underneath it.
-  const shownWorkOrders = traceIncidentId
-    ? workOrders.filter((w) => w.incident_id === traceIncidentId)
-    : workOrders;
-
-  const asset = selectedAsset ? state.assets[selectedAsset] ?? null : null;
+  const badges: Partial<Record<TabId, { count: number; tone?: "bad" | "warn" }>> = {
+    incidents: { count: openIncidents, tone: "bad" },
+    inventory: { count: lowStock, tone: "warn" },
+  };
 
   return (
-    <div className="app">
-      <div className="topbar">
-        <div className="brand">
-          <div className="brand-mark">FI</div>
-          <div className="brand-text">
-            <h1>Asset Sentinel</h1>
-            <div className="sub">
-              Autonomous fleet diagnostics · CAMARA Device Status + Location Retrieval via Nokia
-              Network as Code
-            </div>
-          </div>
-        </div>
-
-        <div className="chips">
-          {health && (
-            <>
-              <span className="chip">
-                agent <b>{health.agent_mode === "llm" ? "LLM" : "rule"}</b>
-              </span>
-              {health.agent_mode === "llm" && health.llm_model && (
-                <span className="chip">{health.llm_model.replace("groq:", "")}</span>
-              )}
-              <span className="chip">
-                ML <b>{health.ml_backend}</b>
-              </span>
-              <span className={`chip ${health.nac_mode === "live" ? "live" : "off"}`}>
-                CAMARA <b>{health.nac_mode}</b>
-              </span>
-              {health.live_camara_available && (
-                <span className="chip" title="The live sandbox check is available in the Network as Code panel">
-                  live check <b>ready</b>
-                </span>
-              )}
-            </>
-          )}
-          <span className={`chip ${connected ? "live" : "off"}`}>
-            <span className="pulse" />
-            {connected ? "streaming" : "reconnecting"}
-          </span>
-        </div>
-      </div>
-
-      <KpiBar kpis={state.kpis} />
-
-      <div className="grid">
-        {/* ── hero: the site ─────────────────────────────────────────── */}
-        <div className="col">
-          <div className="panel feature grow">
-            <header>
-              <h2>Site map</h2>
-              <span className="note">{assets.length} assets · NEOM / Gulf of Aqaba</span>
-            </header>
-            <FleetMap
-              assets={assets}
-              technicians={technicians}
-              workOrders={workOrders}
-              deadZones={state.deadZones}
-              riskById={riskById}
-              selectedId={selectedAsset}
-              onSelect={setSelectedAsset}
-            />
-          </div>
-          <div className="panel" style={{ maxHeight: "28%" }}>
-            <header>
-              <h2>Asset telemetry</h2>
-            </header>
-            <div className="body">
-              <AssetDrawer
-                asset={asset}
-                risk={selectedAsset ? riskById[selectedAsset] ?? null : null}
-                history={selectedAsset ? state.telemetryHistory[selectedAsset] ?? [] : []}
-                latest={selectedAsset ? state.latestTelemetry[selectedAsset] ?? null : null}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── controls & foresight ───────────────────────────────────── */}
-        <div className="col">
-          <div className="panel">
-            <header>
-              <h2>Simulate</h2>
-            </header>
-            <div className="body">
-              <ScenarioPanel assets={assets} />
-            </div>
-          </div>
-          <div className={`panel${nacOpen ? "" : " collapsed"}`}>
-            <header>
-              <h2>Network as Code</h2>
-              <span className="note">sandbox</span>
-              <button
-                className="panel-toggle"
-                onClick={() => setNacOpen((v) => !v)}
-                aria-expanded={nacOpen}
-                title={nacOpen ? "Minimise panel" : "Expand panel"}
-              >
-                {nacOpen ? "−" : "+"}
-              </button>
-            </header>
-            {nacOpen && (
-              <div className="body">
-                <LiveCamaraPanel assetId={selectedAsset} />
-              </div>
-            )}
-          </div>
-          <div className="panel grow">
-            <header>
-              <h2>Predictive maintenance</h2>
-            </header>
-            <div className="body">
-              <FleetHealthPanel
-                rows={risk}
-                available={riskAvailable}
-                atRisk={atRisk}
-                onSelect={setSelectedAsset}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── the agent, and what it decided ─────────────────────────── */}
-        <div className="col col-trace">
-          <div className="panel feature grow">
-            <header>
-              <h2>Agent reasoning</h2>
-              {traceIncidentId && <span className="note">{traceIncidentId}</span>}
-            </header>
-            <div className="body">
-              <AgentTrace steps={traceSteps} active={!!investigating} />
-            </div>
-          </div>
-          <div className="panel" style={{ flex: "0 0 auto", maxHeight: "40%" }}>
-            <header>
-              <h2>Work orders</h2>
-            </header>
-            <div className="body">
-              {shownWorkOrders.length === 0 ? (
-                traceIncidentId ? (
-                  <div className="empty">
-                    <strong>{investigating ? "Not yet" : "No dispatch"}</strong>
-                    <span>
-                      {investigating
-                        ? "A work order is only raised once the network has been ruled out as the cause."
-                        : "This incident resolved without sending anyone — the saving, not a gap in the record."}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="empty">
-                    <strong>None issued</strong>
-                    <span>
-                      A work order is only raised once the network has been ruled out as the cause.
-                    </span>
-                  </div>
-                )
-              ) : (
-                shownWorkOrders.map((w) => <WorkOrderCard key={w.id} wo={w} />)
-              )}
-            </div>
-          </div>
-          <div className="panel" style={{ flex: "0 0 auto", maxHeight: "30%" }}>
-            <header>
-              <h2>Incidents</h2>
-            </header>
-            <div className="body">
-              {geofenceAlerts.map((a) => (
-                <div className="gf-alert" key={a.id}>
-                  <div className="gf-top">
-                    <span className="gf-id">{a.id}</span>
-                    <span className="gf-tag">perimeter · no fault</span>
-                  </div>
-                  <div className="gf-body">
-                    <b>{a.asset_label || a.asset_id}</b> has crossed the site perimeter, heading
-                    west toward Egyptian coverage across the Gulf.
-                    {a.distance_km >= 1 ? ` Now ${a.distance_km.toFixed(0)} km beyond it.` : ""} It
-                    is still healthy and still reporting — which is the point. Flagged on the way
-                    out, rather than diagnosed after it goes dark.
-                  </div>
-                </div>
-              ))}
-              {/* The feed's empty state reads "All clear — every asset is reporting",
-                  which is still true of the incident record when a geofence alert is
-                  standing: nothing has failed. On screen directly beneath the alert it
-                  read as a contradiction, so the banner stands down while an alert is
-                  up and the alert speaks for the panel. */}
-              {(incidents.length > 0 || geofenceAlerts.length === 0) && (
-                <IncidentFeed
-                  incidents={incidents}
-                  selectedId={selectedIncident}
-                  onSelect={setSelectedIncident}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AppShell
+      route={route.tab}
+      badges={badges}
+      chips={{
+        agentMode: health?.agent_mode,
+        llmModel: health?.llm_model ?? null,
+        mlBackend: health?.ml_backend,
+        nacMode: health?.nac_mode,
+        connected,
+      }}
+      theme={choice}
+      onCycleTheme={cycle}
+    >
+      {route.tab === "dashboard" && (
+        <DashboardTab
+          state={state}
+          risk={risk}
+          selectedAsset={selectedAsset}
+          onSelectAsset={onSelectAsset}
+        />
+      )}
+      {route.tab === "assets" && (
+        <AssetsTab
+          state={state}
+          risk={risk}
+          selectedAsset={selectedAsset}
+          onSelectAsset={onSelectAsset}
+        />
+      )}
+      {route.tab === "maintenance" && (
+        <MaintenanceTab state={state} risk={risk} riskAvailable={riskAvailable} />
+      )}
+      {route.tab === "incidents" && <IncidentsTab state={state} focusId={route.id} />}
+      {route.tab === "inventory" && <InventoryTab state={state} />}
+      {route.tab === "simulation" && (
+        <SimulationTab state={state} selectedAsset={selectedAsset} />
+      )}
+    </AppShell>
   );
 }

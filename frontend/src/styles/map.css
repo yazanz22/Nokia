@@ -1,0 +1,228 @@
+/* ==========================================================================
+   Site map.
+
+   The map used to paint itself from twenty-one hardcoded hex values, all of them
+   chosen against a dark background, so it could not follow the theme. Everything
+   it draws now reads one of the tokens below, and the dark block at the bottom
+   is the only place its dark appearance is decided.
+
+   The four state colours are the map's whole colour vocabulary. Five backend
+   states collapse into them (see lib/format.ts): `silent` and `anomaly` are one
+   thing to somebody looking at a map, which is what took the legend from eight
+   entries to four.
+   ========================================================================== */
+
+:root {
+  /* ground */
+  --map-terrain-1: #eef1f5;
+  --map-terrain-2: #e6eaf0;
+  --map-terrain-3: #dde2ea;
+  --map-grid: #dfe4ec;
+  --map-contour: #d5dbe5;
+
+  /* working areas */
+  --map-zone-fill: #d9e0ea;
+  --map-zone-line: #c2cad8;
+  /* #7a8496 measured 3.12:1 on the light terrain, and this carries site names,
+     depot names, crew names and the scale bar. */
+  --map-label: #525c6b;
+
+  /* things that move */
+  /* Used as TEXT for the work-order id and ETA, not only as a line, so it has to
+     clear the text threshold rather than the 3:1 graphical one. */
+  --map-route: #96570a;
+  --map-tech: #7a8496;
+  --map-tech-busy: var(--amber-500);
+  --map-depot: #475569;
+
+  /* marker outline, so a dot stays legible on any ground */
+  --map-marker-stroke: var(--grey-0);
+
+  /* the four state colours */
+  --map-healthy: var(--ok-fg);
+  --map-attention: #d64541;
+  --map-nocoverage: #2b7cd3;
+  --map-handled: var(--amber-500);
+
+  --map-legend-bg: rgb(255 255 255 / 0.9);
+}
+
+[data-theme="dark"] {
+  --map-terrain-1: #171b22;
+  --map-terrain-2: #12161c;
+  --map-terrain-3: #0d1014;
+  --map-grid: #1e232b;
+  --map-contour: #232932;
+
+  --map-zone-fill: #1b212a;
+  --map-zone-line: #2b323d;
+  --map-label: #78828f;
+
+  --map-route: var(--amber-400);
+  --map-tech: #6b7480;
+  --map-tech-busy: var(--amber-400);
+  --map-depot: #94a3b8;
+
+  --map-marker-stroke: var(--grey-950);
+
+  --map-healthy: var(--ok-fg);
+  --map-attention: #ff6b60;
+  --map-nocoverage: #62a8ef;
+  --map-handled: var(--amber-400);
+
+  --map-legend-bg: rgb(14 16 20 / 0.86);
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Direct child only. This used to match every svg inside the wrapper, which
+   caught the glyphs in the shape key and stretched each one to fill the map. */
+.map-wrap > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── legend. Four entries, and it says so on one line at desktop. ───────── */
+
+/* Bottom-right: the scale bar lives bottom-left and the two were overlapping. */
+.map-legend {
+  position: absolute;
+  right: var(--s-3);
+  bottom: var(--s-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--map-legend-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.map-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+/* Four entries need ~420px on one line. In the single-column layout the map is
+   narrower than that, so the legend wrapped to three or four lines and covered
+   roughly a third of the map it was explaining. */
+@media (max-width: 720px) {
+  .map-legend {
+    left: var(--s-3);
+    right: var(--s-3);
+    justify-content: space-between;
+    gap: var(--s-1) var(--s-2);
+  }
+}
+
+.map-legend i.is-healthy {
+  background: var(--map-healthy);
+}
+.map-legend i.is-attention {
+  background: var(--map-attention);
+}
+.map-legend i.is-nocoverage {
+  background: var(--map-nocoverage);
+}
+.map-legend i.is-handled {
+  background: var(--map-handled);
+}
+
+/* ── markers ────────────────────────────────────────────────────────────── */
+
+.asset-marker {
+  cursor: pointer;
+}
+
+.asset-marker circle {
+  transition: fill var(--dur) var(--ease), r var(--dur-fast) var(--ease);
+}
+
+/* Decoration, not targets. The alert ring animates out to r=20 and the id label
+   sits 10 units right of the dot, so both reach into a neighbour's space; a
+   stroke-only ring is hit-testable along its stroke, and a click landing there
+   selected the wrong machine. Clicks belong to the hit disc and the dot. */
+.asset-marker circle[fill="none"],
+.asset-marker text {
+  pointer-events: none;
+}
+
+/* The group takes focus, but a browser draws its outline around the <g> bounding
+   box, which for a marker carrying an id label is a wide rectangle sitting off to
+   one side of the machine. Draw the ring on the hit disc instead. */
+.asset-marker:focus {
+  outline: none;
+}
+
+.asset-marker:focus-visible .marker-hit {
+  stroke: var(--focus);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.asset-marker:hover circle:not([fill="none"]):not([fill="transparent"]) {
+  r: 7;
+}
+
+/* Depot markers are squares. Shape, not colour, separates them from machines:
+   a depot is a different kind of thing, and giving it a fifth colour would put
+   the legend straight back where it started. */
+.depot-marker rect {
+  fill: var(--map-depot);
+}
+
+.depot-marker text {
+  fill: var(--map-label);
+  pointer-events: none;
+}
+
+/* ── the shape key ───────────────────────────────────────────────────────
+   Top-left, opposite the colour key. Same surface treatment so the two read as
+   one system rather than two floating boxes. */
+.map-key {
+  position: absolute;
+  left: var(--s-3);
+  top: var(--s-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--map-legend-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  pointer-events: none;
+}
+
+.map-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.map-key svg {
+  flex: 0 0 auto;
+}

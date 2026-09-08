@@ -1,129 +1,213 @@
-import { useState } from "react";
-import { completeWorkOrder, deleteWorkOrder } from "../lib/api";
+import { Package, Path, Timer, Warning } from "@phosphor-icons/react";
 import type { WorkOrder } from "../types";
+import {
+  MAINTENANCE_LABEL,
+  MAINTENANCE_WHY,
+  WORK_ORDER_STATUS_LABEL,
+  km,
+  minutes,
+  pct,
+  plural,
+} from "../lib/format";
 
-// The component model routinely answers 0.9999999979, and a plain round prints
-// "100% confidence" — a claim no model can defend and the first thing anyone will
-// challenge. Above 99.5% we say ">99%" instead: honest about the magnitude without
-// asserting certainty. A decimal place would have printed "100.0%", which is worse.
-const pct = (v: number) => (v >= 0.995 ? ">99%" : `${(v * 100).toFixed(0)}%`);
+const STATUS_TONE: Record<string, string> = {
+  assigned: "is-accent",
+  created: "is-accent",
+  queued: "is-warn",
+  awaiting_part: "is-warn",
+  completed: "is-ok",
+};
 
-export function WorkOrderCard({ wo }: { wo: WorkOrder }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const done = wo.status === "completed";
-  // Raised, part named, nobody assigned: the whole crew is already on jobs. Nothing
-  // about this card may read as a truck in motion.
-  const queued = wo.status === "queued";
+const TYPE_TONE: Record<string, string> = {
+  corrective: "is-bad",
+  preventive: "is-ok",
+  predictive: "is-warn",
+};
 
-  // Two separate models produce two separate numbers, and unlabelled they get read
-  // as one: `confidence` is the classifier's confidence in the *fault mode*, while
-  // this is the prognostic model's confidence in the *component* it named. The
-  // shared WorkOrder type is owned elsewhere, so read the field locally.
-  const componentConfidence =
-    wo.component_confidence ?? 0;
-
-  // The list is driven by the websocket, so there is nothing to update locally —
-  // this only guards against a double-click while the request is in flight.
-  //
-  // Release it in `finally`, not just on failure. Deleting unmounts the card so it
-  // never mattered there, but completing leaves the card on screen: the flag stayed
-  // set, and the Delete button next to it — disabled={busy} — was dead from then on.
-  const act = async (fn: (id: string) => Promise<unknown>) => {
-    setBusy(true);
-    setErr("");
-    try {
-      await fn(wo.id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+/**
+ * One job.
+ *
+ * The card leads with what broke and who is going, then explains the journey,
+ * because since components moved into depots the journey is the part that needs
+ * explaining: the assigned technician is regularly not the nearest one, and on a
+ * map that looks like a bug until the card says why.
+ */
+export function WorkOrderCard({
+  wo,
+  onComplete,
+  onNoFault,
+  onDelete,
+  busy,
+}: {
+  wo: WorkOrder;
+  onComplete?: (id: string) => void;
+  onNoFault?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  busy?: boolean;
+}) {
+  const unassigned = !wo.technician_id;
 
   return (
-    <div className={`wo${done ? " wo-done" : ""}`}>
-      <div className="wo-top">
-        <span className="wo-id">
-          {wo.id}
-          <span className={`wo-status ${done ? "done" : queued ? "queued" : "active"}`}>
-            {wo.status.replace("_", " ")}
-          </span>
+    <article className="wo">
+      <header className="wo-head">
+        <span className="mono text-xs">{wo.id}</span>
+        <span className={`badge ${TYPE_TONE[wo.maintenance_type] ?? ""}`}>
+          {MAINTENANCE_LABEL[wo.maintenance_type]}
         </span>
-        <span className="wo-fault">
-          {wo.fault_mode.replace("_", " ")}
-          <br />
-          <span className="conf">{pct(wo.confidence)} fault-mode confidence</span>
+        <span className={`badge ${STATUS_TONE[wo.status] ?? ""}`}>
+          {wo.no_fault_found
+            ? "No fault found"
+            : (WORK_ORDER_STATUS_LABEL[wo.status] ?? wo.status)}
         </span>
-      </div>
+      </header>
 
-      <dl className="wo-grid">
-        <dt>Asset</dt>
-        <dd>{wo.asset_id}</dd>
-        <dt>Component</dt>
-        <dd>
-          {wo.component ? wo.component.replace(/_/g, " ") : "—"}
-          {wo.component && componentConfidence > 0 ? (
-            <span className="conf"> · {pct(componentConfidence)} component confidence</span>
-          ) : null}
-        </dd>
+      <p className="wo-why text-xs text-muted">{MAINTENANCE_WHY[wo.maintenance_type]}</p>
+
+      <dl className="dl">
+        <dt>Machine</dt>
+        <dd className="mono">{wo.asset_id}</dd>
+
+        {wo.component && (
+          <>
+            <dt>Component</dt>
+            <dd>
+              {wo.component.replace(/_/g, " ")}
+              {wo.component_confidence > 0 && (
+                <span className="text-muted text-xs"> at {pct(wo.component_confidence)}</span>
+              )}
+            </dd>
+          </>
+        )}
+
         <dt>Part</dt>
-        <dd>{wo.part || "—"}</dd>
-        <dt>Technician</dt>
-        <dd>
-          {wo.technician_name || "unassigned"}
-          {wo.technician_located_via === "live" || wo.technician_located_via === "mock" ? (
-            <span className="via"> · network-located</span>
-          ) : null}
+        <dd className="mono">
+          {wo.part || "n/a"}
+          {wo.bundled_service && <span className="badge is-ok">Plus service</span>}
         </dd>
-        <dt>Position</dt>
-        <dd>
-          {wo.asset_latitude.toFixed(4)}, {wo.asset_longitude.toFixed(4)}
-        </dd>
+
+        {!unassigned && (
+          <>
+            <dt>Technician</dt>
+            <dd>
+              {wo.technician_name}
+              {wo.technician_located_via !== "seed" && (
+                <span className="text-muted text-xs"> located by the network</span>
+              )}
+            </dd>
+
+            <dt>Arrives</dt>
+            <dd className="mono">{minutes(wo.eta_minutes)}</dd>
+          </>
+        )}
       </dl>
 
-      {wo.nearest_skipped_name && (
-        <div className="wo-why">
-          {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km.toFixed(1)} km but is not
-          carrying a {wo.part}. A closer technician who cannot fix it is a second trip.
+      {/* The route. Two legs and a loading stop when the part comes off a shelf,
+          one leg when it was already in the van. */}
+      {!unassigned && (
+        <div className="wo-route">
+          {wo.warehouse_id ? (
+            <>
+              <span className="wo-leg">
+                <Path size={13} aria-hidden />
+                {km(wo.leg_to_warehouse_km)} to {wo.warehouse_name}
+              </span>
+              <span className="wo-leg">
+                <Package size={13} aria-hidden />
+                {wo.loading_minutes}m loading
+              </span>
+              <span className="wo-leg">
+                <Timer size={13} aria-hidden />
+                {km(wo.leg_to_asset_km)} to the machine
+              </span>
+            </>
+          ) : (
+            <span className="wo-leg">
+              <Path size={13} aria-hidden />
+              {km(wo.distance_km)} direct, part carried in the van
+            </span>
+          )}
         </div>
       )}
 
-      {queued ? (
-        // Nobody is assigned, so there is no route and no ETA — the fields are zero.
-        // Printed as the usual block that reads "0 min out / 0.0 km", which looks like
-        // a technician already standing at the machine rather than one nobody has sent.
-        <div className="wo-wait">
-          <span className="wo-wait-lbl">waiting for a free technician</span>
-          <span className="wo-wait-sub">
-            The fault is confirmed and the part is named. The job is handed to the first
-            technician who finishes — nobody is en route yet.
+      {/* Why a closer technician was passed over. Without this the dispatch reads
+          as a routing error to anybody looking at the map. */}
+      {/* Only when there is a real penalty to report. A rounded zero produced
+          "would arrive 0 minutes later" inside a sentence explaining why they are
+          slower, which is worse than saying nothing. */}
+      {wo.nearest_skipped_name && wo.nearest_skipped_minutes_later > 0 && (
+        <p className="wo-note">
+          <Warning size={14} aria-hidden />
+          <span>
+            <b>{wo.nearest_skipped_name}</b> is nearer the machine at{" "}
+            {km(wo.nearest_skipped_km)}, but would arrive{" "}
+            <b>{plural(wo.nearest_skipped_minutes_later, "minute")} later</b> once the
+            part is collected. Closer is not sooner when the part is not in the van.
           </span>
-        </div>
-      ) : (
-        <div className="wo-eta">
-          <span className="big">{wo.eta_minutes}</span>
-          <span className="lbl">min out</span>
-          <span style={{ flex: 1 }} />
-          <span className="big" style={{ fontSize: 16 }}>
-            {wo.distance_km.toFixed(1)}
-          </span>
-          <span className="lbl">km</span>
-        </div>
+        </p>
       )}
 
-      <div className="wo-actions">
-        {!done && (
-          <button className="btn tiny" disabled={busy} onClick={() => act(completeWorkOrder)}>
-            Mark complete
-          </button>
-        )}
-        <button className="btn tiny ghost" disabled={busy} onClick={() => act(deleteWorkOrder)}>
-          Delete
-        </button>
-      </div>
+      {wo.status === "awaiting_part" && (
+        <p className="wo-note is-bad">
+          <Warning size={14} aria-hidden />
+          <span>
+            No depot on site stocks a <b>{wo.part}</b>. Nobody has been sent, because
+            there is nothing for them to collect. Receipt stock on the Inventory tab to
+            release this job.
+          </span>
+        </p>
+      )}
 
-      {err && <div className="hint err">{err}</div>}
-    </div>
+      {wo.status === "queued" && (
+        <p className="wo-note">
+          <Warning size={14} aria-hidden />
+          <span>
+            Every technician is already on a job. This one is next when somebody frees.
+          </span>
+        </p>
+      )}
+
+      {wo.no_fault_found && (
+        <p className="wo-note">
+          <Warning size={14} aria-hidden />
+          <span>
+            The technician attended and found nothing to repair. The {wo.part} went back
+            to {wo.warehouse_name || "the depot"} unfitted, and the journey is counted
+            against this system rather than filed as a repair.
+          </span>
+        </p>
+      )}
+
+      {(onComplete || onNoFault || onDelete) && wo.status !== "completed" && (
+        <footer className="wo-actions">
+          {onComplete && !unassigned && (
+            <button className="btn btn-sm" disabled={busy} onClick={() => onComplete(wo.id)}>
+              Mark complete
+            </button>
+          )}
+          {/* Only offered once somebody is actually going. A job with no technician
+              on it was never attended, so "no fault found" would be a lie about it;
+              that one gets cancelled instead. */}
+          {onNoFault && !unassigned && (
+            <button
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => onNoFault(wo.id)}
+              title="The technician attended and found nothing to repair. Returns the part to its depot."
+            >
+              No fault found
+            </button>
+          )}
+          {onDelete && (
+            <button
+              className="btn btn-sm btn-ghost btn-danger"
+              disabled={busy}
+              onClick={() => onDelete(wo.id)}
+            >
+              Cancel
+            </button>
+          )}
+        </footer>
+      )}
+    </article>
   );
 }

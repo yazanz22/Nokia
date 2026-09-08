@@ -1,11 +1,29 @@
 import { useState } from "react";
 import { runLiveCheck } from "../lib/api";
 
+/** The house rule from lib/format.ts: words the operator uses, not the enum. */
+const REACH_LABEL: Record<string, string> = {
+  CONNECTED_DATA: "Connected, data",
+  CONNECTED_SMS: "Connected, SMS only",
+  NOT_CONNECTED: "Not connected",
+  UNKNOWN: "Unknown",
+};
+
 interface LiveResult {
   endpoint_host: string;
   device: string;
-  device_status: { path: string; latency_ms: number; result: any };
-  location_retrieval: { path: string; latency_ms: number; result: any };
+  // Typed rather than `any`: these two are the calls the panel leads with, and
+  // reading a coordinate off an unshaped response threw during render.
+  device_status: {
+    path: string;
+    latency_ms: number;
+    result: { status?: string; roaming?: boolean | null; country?: string | null };
+  };
+  location_retrieval: {
+    path: string;
+    latency_ms: number;
+    result: { latitude?: number; longitude?: number; accuracy_m?: number };
+  };
   congestion_insights?: CongestionCall;
   geofencing?: {
     path: string;
@@ -56,7 +74,7 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
     try {
       setRes(await runLiveCheck(assetId ?? undefined));
     } catch (e) {
-      setErr(String(e));
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -72,8 +90,8 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
 
       {!res && !err && (
         <div className="hint" style={{ marginTop: 8 }}>
-          Hits the Nokia sandbox for real — Device Reachability Status, Device Roaming Status,
-          Congestion Insights and Location Retrieval, round-trip timed.
+          Hits the Nokia sandbox for real: Device Reachability Status, Device Roaming
+          Status, Congestion Insights and Location Retrieval, round-trip timed.
         </div>
       )}
 
@@ -96,9 +114,17 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
             </div>
             <div className="kv">
               <span className="k">status</span>
-              <span className="v ok">{res.device_status.result.status}</span>
+              {(() => {
+                const st = String(res.device_status.result.status ?? "UNKNOWN");
+                const ok = st.startsWith("CONNECTED");
+                return (
+                  <span className={`v ${ok ? "ok" : "bad"}`}>{REACH_LABEL[st] ?? st}</span>
+                );
+              })()}
             </div>
-            {res.device_status.result.roaming !== null && (
+            {/* `!= null` rather than `!== null`: the field is optional on the wire,
+                and `undefined !== null` printed the string "undefined". */}
+            {res.device_status.result.roaming != null && (
               <div className="kv">
                 <span className="k">roaming</span>
                 <span className="v">
@@ -117,47 +143,77 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
               <span className="path">Location Retrieval v0</span>
               <span className="lat">{res.location_retrieval.latency_ms} ms</span>
             </div>
-            <div className="kv">
-              <span className="k">position</span>
-              <span className="v">
-                {res.location_retrieval.result.latitude.toFixed(4)},{" "}
-                {res.location_retrieval.result.longitude.toFixed(4)}
-              </span>
-            </div>
-            <div className="kv">
-              <span className="k">accuracy</span>
-              <span className="v">
-                ±{Math.round(res.location_retrieval.result.accuracy_m)} m
-              </span>
-            </div>
+            {/* The sandbox can answer 200 with a body that carries no fix. Reading
+                a coordinate off it unguarded threw during render. */}
+            {(() => {
+              const loc = res.location_retrieval.result ?? {};
+              const lat = typeof loc.latitude === "number" ? loc.latitude : null;
+              const lon = typeof loc.longitude === "number" ? loc.longitude : null;
+              const fix = lat !== null && lon !== null ? `${lat.toFixed(4)}, ${lon.toFixed(4)}` : null;
+              return (
+                <>
+                  <div className="kv">
+                    <span className="k">position</span>
+                    <span className={`v ${fix ? "" : "quiet"}`}>
+                      {fix ?? "no fix returned"}
+                    </span>
+                  </div>
+                  <div className="kv">
+                    <span className="k">accuracy</span>
+                    <span className={`v ${typeof loc.accuracy_m === "number" ? "" : "quiet"}`}>
+                      {typeof loc.accuracy_m === "number"
+                        ? `±${Math.round(loc.accuracy_m)} m`
+                        : "not reported"}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {res.congestion_insights && <CongestionBlock call={res.congestion_insights} />}
 
-          {res.geofencing && (
-            <div className="live-call">
-              <div className="live-call-head">
-                <span className="badge-live">LIVE</span>
-                <span className="path">Geofencing Subscriptions v0.3</span>
-                <span className="lat">push</span>
-              </div>
-              <div className="kv">
-                <span className="k">perimeter watch</span>
-                <span className="v">
-                  {res.geofencing.status}
-                  {res.geofencing.subscription_id
-                    ? ` · ${res.geofencing.subscription_id.slice(0, 8)}`
-                    : ""}
-                </span>
-              </div>
-              {res.geofencing.note && (
-                <div className="hint" style={{ marginTop: 4 }}>{res.geofencing.note}</div>
-              )}
-            </div>
-          )}
+          {res.geofencing &&
+            (() => {
+              const registered =
+                res.geofencing!.status === "existing" || res.geofencing!.status === "created";
+              return (
+                <div className={`live-call${registered ? "" : " live-call-empty"}`}>
+                  <div className="live-call-head">
+                    <span className={registered ? "badge-live" : "badge-quiet"}>
+                      {registered ? "LIVE" : "NOT REGISTERED"}
+                    </span>
+                    <span className="path">Geofencing Subscriptions v0.3</span>
+                    <span className="lat">push</span>
+                  </div>
+                  <div className="kv">
+                    <span className="k">perimeter watch</span>
+                    <span className={`v ${registered ? "" : "quiet"}`}>
+                      {res.geofencing!.status}
+                      {res.geofencing!.count ? ` · ${res.geofencing!.count}` : ""}
+                      {res.geofencing!.subscription_id
+                        ? ` · ${res.geofencing!.subscription_id.slice(0, 8)}`
+                        : ""}
+                    </span>
+                  </div>
+                  {res.geofencing!.note && (
+                    <div className="hint" style={{ marginTop: "var(--s-1)" }}>
+                      {res.geofencing!.note}
+                    </div>
+                  )}
+                  {/* The backend sends the failure reason precisely so a reviewer
+                      can see what broke. It was typed and never rendered. */}
+                  {res.geofencing!.error && (
+                    <div className="hint err" style={{ marginTop: "var(--s-1)" }}>
+                      {res.geofencing!.error}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           <div className="hint">
-            A real call to the Nokia sandbox. The test SIM is provisioned in Hungary — the fleet
+            A real call to the Nokia sandbox. The test SIM is provisioned in Hungary. The fleet
             above is replayed telemetry served through the identical CAMARA contract.
           </div>
         </div>

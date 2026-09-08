@@ -1,0 +1,188 @@
+/* ==========================================================================
+   Design tokens.
+
+   One place where colour, type, space, radius and elevation are decided. Every
+   other stylesheet reads these and defines none of its own, so a change here is
+   a change everywhere and the two themes cannot drift apart.
+
+   THEME LOCK. The page is one theme at a time. Light and dark are two value sets
+   for the same token names, never two sets of rules: `[data-theme="dark"]` swaps
+   values, and no component may hardcode a colour or reach past a token. A panel
+   that inverts mid-page is the bug this structure exists to make impossible.
+
+   COLOUR LOCK. Exactly one accent: amber. It is the pitch deck's accent, so the
+   product and the deck read as one thing. Everything else is neutral, except the
+   four semantic status colours below, which are not decoration: they encode
+   machine state, and an operations console that cannot say "this one is broken"
+   in colour is not doing its job.
+
+   SHAPE LOCK. One radius scale. Controls 6px, surfaces 10px, pills full. No
+   component invents a fifth value.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ── neutrals: one cool-grey ramp, used in both themes ────────────────── */
+  --grey-0: #ffffff;
+  --grey-25: #fbfbfc;
+  --grey-50: #f5f6f8;
+  --grey-100: #eceef2;
+  --grey-200: #dfe2e8;
+  --grey-300: #c6ccd6;
+  --grey-400: #9aa3b2;
+  --grey-500: #6e7787;
+  --grey-600: #515965;
+  --grey-700: #3a4049;
+  --grey-800: #262a31;
+  --grey-850: #1c1f25;
+  --grey-900: #14161b;
+  --grey-950: #0e1014;
+
+  /* ── the single accent ────────────────────────────────────────────────── */
+  --amber-300: #ffcd7a;
+  --amber-400: #f5a623;
+  --amber-500: #d98314;
+  --amber-600: #a8620c;
+
+  /* ── semantic status. State, not decoration. ──────────────────────────── */
+  /* Darkened from #12805c, which measured 4.16:1 against its own badge fill and
+     failed WCAG AA. This clears it at 5.14:1 and 6.07:1 on a white surface. */
+  --ok-fg: #0f7052;
+  --ok-bg: #d8f2e7;
+  --warn-fg: #9a5b00;
+  --warn-bg: #fdeccd;
+  --bad-fg: #b3261e;
+  --bad-bg: #fbdedc;
+  --info-fg: #1a5fa8;
+  --info-bg: #d9e8f8;
+
+  /* ── surfaces ─────────────────────────────────────────────────────────── */
+  --bg: var(--grey-50);
+  --surface: var(--grey-0);
+  --surface-2: var(--grey-25);
+  --surface-sunken: var(--grey-100);
+  --surface-hover: var(--grey-50);
+
+  /* ── ink ──────────────────────────────────────────────────────────────── */
+  --text: var(--grey-900);
+  /* One step darker than --grey-500, which measured 3.9-4.4:1 on the sunken and
+     tinted surfaces it is used on. This value clears AA everywhere it lands:
+     5.70 on surface, 4.91 on sunken, 5.51 on surface-2. */
+  --text-muted: #5f6775;
+  --text-faint: var(--grey-400);
+
+  /* ── lines ────────────────────────────────────────────────────────────── */
+  --line: var(--grey-200);
+  --line-strong: var(--grey-300);
+
+  /* ── accent roles ─────────────────────────────────────────────────────── */
+  --accent: var(--amber-500);
+  --accent-hover: var(--amber-600);
+  --accent-soft: #fdf0d9;
+  --accent-line: var(--amber-400);
+  /* Accent as TEXT on a surface, which is a different job from accent as a fill.
+     --accent is a light hue: at #d98314 on white it measures 2.91:1, under even
+     the 3:1 large-text floor, and it was carrying the two KPI figures the whole
+     pitch rests on. --accent-hover had been drafted into this role and failed it
+     too. This is the role, stated once. */
+  --accent-text: #8a5008;
+  /* Text sitting on a filled accent button. Amber is a light hue, so the
+     readable pairing is dark ink on amber, never white. Section 4.5 of the
+     design brief calls white-on-amber a contrast failure, and it is: it lands
+     near 2:1. */
+  --accent-ink: #2a1a02;
+
+  /* ── focus. One ring, every interactive element, never removed. ───────── */
+  --focus: #1a6fd4;
+
+  /* ── elevation. Tinted to the surface, never pure black. ──────────────── */
+  /* One only. The system chose borders over elevation, so the deeper steps were
+     declared and never used. */
+  --shadow-1: 0 1px 2px rgb(20 22 27 / 0.06), 0 1px 1px rgb(20 22 27 / 0.04);
+
+  /* ── type ─────────────────────────────────────────────────────────────── */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono",
+    Menlo, monospace;
+
+  --text-2xs: 0.6875rem;  /* 11px - table meta, badge text */
+  --text-xs: 0.75rem;     /* 12px - labels, captions */
+  --text-sm: 0.8125rem;   /* 13px - dense body, table cells */
+  --text-base: 0.875rem;  /* 14px - body */
+  --text-md: 1rem;        /* 16px - panel titles */
+  --text-lg: 1.25rem;     /* 20px - section headings */
+  --text-xl: 1.75rem;     /* 28px - KPI figures */
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ── space: 4px base, no arbitrary values anywhere else ───────────────── */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.25rem;
+  --s-8: 2rem;
+  --s-10: 2.5rem;
+
+  /* ── shape ────────────────────────────────────────────────────────────── */
+  --radius-control: 6px;
+  /* The inner pill of a segmented control, which has to sit inside a 6px
+     container with 2px of padding. Declared here rather than written as a raw
+     4px in the component, so the scale stays in one place. */
+  --radius-control-inner: 4px;
+  --radius-surface: 10px;
+  --radius-pill: 999px;
+
+  /* ── layout ───────────────────────────────────────────────────────────── */
+  --topbar-h: 56px;
+  --tabbar-h: 44px;
+  --page-max: 1600px;
+
+  /* ── motion. Dial 3: state feedback only, nothing ambient. ────────────── */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 110ms;
+  --dur: 180ms;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: var(--grey-950);
+  --surface: var(--grey-900);
+  --surface-2: var(--grey-850);
+  --surface-sunken: var(--grey-950);
+  --surface-hover: var(--grey-850);
+
+  --text: var(--grey-100);
+  --text-muted: var(--grey-400);
+  --text-faint: var(--grey-500);
+
+  --line: #272b33;
+  --line-strong: #363c46;
+
+  /* Amber lightens in dark so it keeps the same visual weight against a dark
+     ground. Hierarchy parity: if the accent leads in light, it leads in dark. */
+  --accent: var(--amber-400);
+  --accent-hover: var(--amber-300);
+  --accent-soft: #33250d;
+  --accent-line: var(--amber-500);
+  --accent-text: var(--amber-300);
+  --accent-ink: #1a1102;
+
+  --ok-fg: #52d4a4;
+  --ok-bg: #10312a;
+  --warn-fg: #f2b750;
+  --warn-bg: #372709;
+  --bad-fg: #ff8a80;
+  --bad-bg: #3a1714;
+  --info-fg: #79b8f5;
+  --info-bg: #10283f;
+
+  --focus: #6aa9f0;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+}

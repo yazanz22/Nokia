@@ -3,13 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Autonomous fleet diagnostics for giga-project sites, built on CAMARA network APIs."
     />
     <title>FILO Asset Sentinel</title>
+    <!--
+      Fonts are self-hosted through @fontsource-variable (see src/main.tsx) rather
+      than linked from Google Fonts. Two reasons, and the second is the one that
+      matters: a demo laptop on venue wifi should not need a third-party request to
+      render its own type, and a blocked or slow font host is a layout shift in
+      front of judges.
+    -->
+    <script>
+      // Stamp the stored theme before first paint. Without this the app renders
+      // light for a frame and then flips, which on a projector reads as a bug.
+      (function () {
+        try {
+          var v = localStorage.getItem("sentinel.theme");
+          var resolved =
+            v === "light" || v === "dark"
+              ? v
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.dataset.theme = resolved;
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

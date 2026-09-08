@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useId, useMemo, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import type { Asset, DeadZone, Technician, WorkOrder } from "../types";
+import type { Asset, DeadZone, Technician, Warehouse, WorkOrder } from "../types";
+import { GROUP_LABEL, minutes, STATE_GROUP, type StateGroup } from "../lib/format";
 
 // The operational site perimeter. SOURCE OF TRUTH: backend/app/nac/base.py
 // (SITE_CENTER / SITE_RADIUS_KM). These are copies, deliberately: a browser cannot
@@ -18,25 +19,21 @@ const W = 900;
 const H = 640;
 const PAD = 46;
 
-const STATE_COLOR: Record<string, string> = {
-  healthy: "#46d39a",
-  anomaly: "#ffb648",
-  silent: "#ff5f52",
-  blindspot: "#5aa9e6",
-  dispatched: "#ffc266",
+// Four colours, one per displayed state group. Every value is themed in
+// styles/map.css; nothing here decides an appearance.
+const GROUP_COLOR: Record<StateGroup, string> = {
+  healthy: "var(--map-healthy)",
+  attention: "var(--map-attention)",
+  nocoverage: "var(--map-nocoverage)",
+  handled: "var(--map-handled)",
 };
 
-const STATE_LABEL: Record<string, string> = {
-  healthy: "healthy",
-  anomaly: "anomaly",
-  silent: "silent",
-  blindspot: "blind spot",
-  dispatched: "dispatched",
-};
+const LEGEND: StateGroup[] = ["healthy", "attention", "nocoverage", "handled"];
 
 interface Props {
   assets: Asset[];
   technicians: Technician[];
+  warehouses: Warehouse[];
   riskById?: Record<string, { horizon_hours: number | null }>;
   workOrders: WorkOrder[];
   deadZones: DeadZone[];
@@ -117,25 +114,49 @@ const ZONE_CLEARANCE = 8; // visible gap left between two site outlines, in view
 // in a cluster the disc shrinks instead (see `markers`), with no floor, because any
 // floor is a licence to overlap the neighbour again.
 const MAX_HIT = 15;
+// And a floor, because a disc that shrinks to nothing is not a smaller target, it
+// is no target at all: two machines projecting to the same point both got r=0, so
+// neither was hit-testable and pickNearest broke the tie by array order, leaving
+// the second one permanently unclickable. Below this the discs may overlap, which
+// is harmless — pickNearest resolves overlap by true distance anyway.
+const MIN_HIT = 3;
 // How far from a machine a click still counts as aimed at it, for clicks that land in
 // the gaps between discs. Beyond this the map is empty desert and nothing is selected.
 const PICK_RADIUS = 34;
 
-export function FleetMap({ assets, technicians, workOrders, deadZones, riskById = {}, selectedId, onSelect }: Props) {
+function FleetMapImpl({
+  assets,
+  technicians,
+  warehouses,
+  workOrders,
+  deadZones,
+  riskById = {},
+  selectedId,
+  onSelect,
+}: Props) {
   // Equirectangular with a single scale for both axes. Stretching each axis
   // independently to fill the box makes the map lie about distance — at this latitude
   // it rendered east-west spans 1.85x larger than north-south ones, so a technician
   // who looked closer often was not. "Nearest" has to mean the same thing on the map
   // as it does in the dispatch.
   const project = useMemo(() => {
-    const pts = [...assets, ...technicians];
+    const pts = [...assets, ...technicians, ...warehouses];
     if (pts.length === 0) return () => [W / 2, H / 2] as [number, number];
     const lats = pts.map((p) => p.latitude);
     const lons = pts.map((p) => p.longitude);
-    const latLo = Math.min(...lats);
-    const latHi = Math.max(...lats);
-    const lonLo = Math.min(...lons);
-    const lonHi = Math.max(...lons);
+    // Quantised to a ~5 km grid. The extent is taken from the crew as well as the
+    // machines, and the simulator nudges every available technician a fraction of a
+    // degree on each 2s tick; whenever one of them held the extreme in any
+    // direction the whole frame re-fitted, which moved every marker on the map,
+    // the stationary depots and the perimeter ring with it, and changed the scale
+    // bar. The map crept and shimmered continuously and nothing was ever where you
+    // last looked. It now re-fits only when something genuinely leaves the box,
+    // which is the one time you want it to.
+    const q = (v: number) => Math.round(v * 20) / 20;
+    const latLo = q(Math.min(...lats) - 0.05);
+    const latHi = q(Math.max(...lats) + 0.05);
+    const lonLo = q(Math.min(...lons) - 0.05);
+    const lonHi = q(Math.max(...lons) + 0.05);
 
     // Longitude degrees shrink with latitude; convert both spans to kilometres first.
     const midLat = (latLo + latHi) / 2;
@@ -153,7 +174,7 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
       offX + (lon - lonLo) * kmPerLon * scale,
       offY + (latHi - lat) * kmPerLat * scale, // north up
     ];
-  }, [assets, technicians]);
+  }, [assets, technicians, warehouses]);
 
   // Site zones are genuine, and now they are also geographic: the backend assigns a
   // machine to the working area it is nearest to (seed.py::_SITE_AREAS), which is a
@@ -202,10 +223,9 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
   // r=15 on all thirty was wrong: at this density the discs overlapped, and SVG
   // hit-testing hands the click to the topmost element, so clicking a machine inside a
   // cluster selected whichever of its neighbours happened to be drawn last. Sizing each
-  // disc to half the distance to its nearest neighbour makes overlap impossible —
-  // r_i + r_j <= d_ij for every pair — so a click inside a disc is unambiguous, and the
-  // disc you are inside is always the nearest machine, which is the same answer the
-  // map-level fallback below gives. The two rules never disagree.
+  // disc to half the distance to its nearest neighbour keeps overlap to the cases
+  // clamped by MIN_HIT, and pickNearest resolves those by true distance, so the
+  // machine you select is always the nearest one either way.
   const markers = useMemo(() => {
     const pts = assets.map((a) => project(a.latitude, a.longitude));
     return assets.map((a, i) => {
@@ -214,12 +234,30 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
         if (j === i) continue;
         nearest = Math.min(nearest, Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]));
       }
-      const hit = Number.isFinite(nearest) ? Math.min(MAX_HIT, nearest / 2) : MAX_HIT;
+      const hit = Number.isFinite(nearest)
+        ? Math.max(MIN_HIT, Math.min(MAX_HIT, nearest / 2))
+        : MAX_HIT;
       return { id: a.id, x: pts[i][0], y: pts[i][1], hit };
     });
   }, [assets, project]);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // The reduce-motion block in base.css neutralises CSS animations. SMIL is not a
+  // CSS animation, so the alert pulse, the marching route dashes and the travelling
+  // dot all kept running for somebody who had asked for no motion — continuous
+  // large-area movement on the biggest panel in the product, which is exactly the
+  // case the setting exists for. Read once: a viewer who changes the OS setting
+  // mid-session gets it on the next mount, which is the right trade for not
+  // subscribing every marker to a media query.
+  const still = useMemo(
+    () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+    []
+  );
+
+  // Ids in <defs> are document-global. Only one map mounts today, but a second one
+  // would silently share the first's gradients and patterns.
+  const uid = useId().replace(/:/g, "");
 
   // Shrinking the discs leaves gaps between them, and a click that lands in a gap
   // should still pick the machine it was aimed at rather than nothing at all. This
@@ -264,32 +302,39 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
 
   return (
     <div className="map-wrap">
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice"
+      {/* `meet`, not `slice`. The panel is never the viewBox's 1.4:1, and covering
+          it cropped whatever did not fit: about 20 units top and bottom at 1440
+          wide, and roughly half the site left and right in the single-column
+          layout, where machines near the edge became invisible AND unclickable.
+          The projection already insets everything to PAD, so letterboxing shows
+          empty desert rather than losing content. */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
            role="group" aria-label="Fleet map of the project site">
         <defs>
-          <radialGradient id="terrain" cx="42%" cy="34%" r="78%">
-            <stop offset="0%" stopColor="#16202f" />
-            <stop offset="55%" stopColor="#111a27" />
-            <stop offset="100%" stopColor="#0a1018" />
+          <radialGradient id={`terrain-${uid}`} cx="42%" cy="34%" r="78%">
+            <stop offset="0%" stopColor="var(--map-terrain-1)" />
+            <stop offset="55%" stopColor="var(--map-terrain-2)" />
+            <stop offset="100%" stopColor="var(--map-terrain-3)" />
           </radialGradient>
-          <pattern id="grid" width="45" height="45" patternUnits="userSpaceOnUse">
-            <path d="M45 0H0V45" fill="none" stroke="#1b2536" strokeWidth="1" />
+          <pattern id={`grid-${uid}`} width="45" height="45" patternUnits="userSpaceOnUse">
+            <path d="M45 0H0V45" fill="none" stroke="var(--map-grid)" strokeWidth="1" />
           </pattern>
-          <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+          <filter id={`soft-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
             <feGaussianBlur stdDeviation="9" />
           </filter>
-          <pattern id="deadzone" width="7" height="7" patternUnits="userSpaceOnUse"
+          <pattern id={`deadzone-${uid}`} width="7" height="7" patternUnits="userSpaceOnUse"
                    patternTransform="rotate(45)">
-            <rect width="7" height="7" fill="#5aa9e6" opacity="0.07" />
-            <line x1="0" y1="0" x2="0" y2="7" stroke="#5aa9e6" strokeWidth="1.4" opacity="0.3" />
+            <rect width="7" height="7" fill="var(--map-nocoverage)" opacity="0.07" />
+            <line x1="0" y1="0" x2="0" y2="7" stroke="var(--map-nocoverage)" strokeWidth="1.4"
+                  opacity="0.3" />
           </pattern>
         </defs>
 
-        <rect width={W} height={H} fill="url(#terrain)" />
-        <rect width={W} height={H} fill="url(#grid)" opacity="0.55" />
+        <rect width={W} height={H} fill={`url(#terrain-${uid})`} />
+        <rect width={W} height={H} fill={`url(#grid-${uid})`} opacity="0.55" />
 
         {/* Contour suggestion — desert relief, purely atmospheric. */}
-        <g stroke="#1e2a3c" fill="none" opacity="0.6">
+        <g stroke="var(--map-contour)" fill="none" opacity="0.6">
           <path d="M-20 190 Q 190 130 380 200 T 780 175 T 960 215" strokeWidth="1" />
           <path d="M-20 250 Q 200 195 400 258 T 800 232 T 960 268" strokeWidth="1" />
           <path d="M-20 430 Q 230 372 450 438 T 850 408 T 960 442" strokeWidth="1" />
@@ -298,20 +343,20 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
 
         {/* Coverage the agent has learned is bad. Nobody surveyed for this — it is
             the by-product of investigating incidents, drawn where they clustered. */}
-        {deadZones.map((z) => {
+        {deadZones.map((z, zi) => {
           const [x1, y1] = project(z.latitude + z.span / 2, z.longitude - z.span / 2);
           const [x2, y2] = project(z.latitude - z.span / 2, z.longitude + z.span / 2);
           const w = Math.max(Math.abs(x2 - x1), 26);
           const h = Math.max(Math.abs(y2 - y1), 26);
           return (
-            <g key={`dz-${z.latitude}-${z.longitude}`}>
+            <g key={`dz-${zi}-${z.latitude}-${z.longitude}`}>
               <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={w} height={h}
-                    fill="url(#deadzone)" stroke="#5aa9e6" strokeWidth="1"
+                    fill={`url(#deadzone-${uid})`} stroke="var(--map-nocoverage)" strokeWidth="1"
                     strokeDasharray="4 3" opacity="0.85" rx="3" />
               <text x={Math.min(x1, x2) + w / 2} y={Math.min(y1, y2) - 5} textAnchor="middle"
-                    fill="#5aa9e6" fontSize="9.5" fontFamily="Barlow Condensed, sans-serif"
-                    letterSpacing="1.1">
-                DEAD ZONE · {z.incidents}
+                    fill="var(--map-nocoverage)" fontSize="10"
+                    fontFamily="var(--font-sans)" fontWeight="500">
+                Known dead zone ({z.incidents})
               </text>
             </g>
           );
@@ -320,11 +365,11 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
         {/* Site working areas */}
         {zones.map((z) => (
           <g key={z.site}>
-            <polygon points={z.d} fill="#1d2a3d" opacity="0.42" filter="url(#soft)" />
+            <polygon points={z.d} fill="var(--map-zone-fill)" opacity="0.6" filter={`url(#soft-${uid})`} />
             <polygon
               points={z.d}
               fill="none"
-              stroke="#2e3d54"
+              stroke="var(--map-zone-line)"
               strokeWidth="1"
               strokeDasharray="3 4"
             />
@@ -332,11 +377,10 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
               x={z.cx}
               y={z.cy}
               textAnchor="middle"
-              fill="#5d6980"
+              fill="var(--map-label)"
               fontSize="10.5"
-              fontFamily="Barlow Condensed, sans-serif"
-              letterSpacing="1.4"
-              style={{ textTransform: "uppercase" }}
+              fontFamily="var(--font-sans)"
+              fontWeight="500"
             >
               {z.site.replace(/^.*—\s*/, "")}
             </text>
@@ -354,17 +398,21 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
           const d = `M${tx},${ty} Q${mx},${my} ${ax},${ay}`;
           return (
             <g key={`route-${w.id}`}>
-              <path d={d} fill="none" stroke="#ffc266" strokeWidth="1.6" opacity="0.5"
+              <path d={d} fill="none" stroke="var(--map-route)" strokeWidth="1.6" opacity="0.55"
                     strokeDasharray="6 5">
-                <animate attributeName="stroke-dashoffset" from="11" to="0" dur="0.8s"
-                         repeatCount="indefinite" />
+                {!still && (
+                  <animate attributeName="stroke-dashoffset" from="11" to="0" dur="0.8s"
+                           repeatCount="indefinite" />
+                )}
               </path>
-              <circle r="3.5" fill="#ffc266">
-                <animateMotion dur="2.6s" repeatCount="indefinite" path={d} />
-              </circle>
-              <text x={mx} y={my - 7} textAnchor="middle" fill="#ffc266" fontSize="10.5"
-                    fontFamily="IBM Plex Mono, monospace">
-                {w.id} · {w.eta_minutes}m
+              {!still && (
+                <circle r="3.5" fill="var(--map-route)">
+                  <animateMotion dur="2.6s" repeatCount="indefinite" path={d} />
+                </circle>
+              )}
+              <text x={mx} y={my - 7} textAnchor="middle" fill="var(--map-route)" fontSize="10"
+                    fontFamily="var(--font-mono)">
+                {w.id} {minutes(w.eta_minutes)}
               </text>
             </g>
           );
@@ -380,49 +428,87 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
           const r = Math.abs(cy - edgeY);
           return (
             <g opacity="0.5">
-              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#4a5878" strokeWidth="1.2"
-                      strokeDasharray="7 6" />
-              <text x={cx} y={cy - r - 6} textAnchor="middle" fill="#5d6980" fontSize="9.5"
-                    fontFamily="Barlow Condensed, sans-serif" letterSpacing="1.4">
-                SITE PERIMETER · {SITE_RADIUS_KM} km
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--map-zone-line)"
+                      strokeWidth="1.2" strokeDasharray="7 6" />
+              <text x={cx} y={cy - r - 6} textAnchor="middle" fill="var(--map-label)"
+                    fontSize="10" fontFamily="var(--font-sans)" fontWeight="500">
+                Site perimeter
               </text>
             </g>
           );
         })()}
+
+        {/* Clicks that land between the hit discs — see pickNearest. It has to sit
+            ABOVE the zones (whose polygons would otherwise swallow the click and
+            have no handler) and BELOW everything with its own tooltip or hit disc.
+            It was last, over the depots and the crew: `fill="transparent"` is
+            painted, so it captured every pointer event on them. Depot stock lives
+            only in that <title>, so it was unreachable, and clicking a depot
+            selected whichever machine happened to be nearest. */}
+        <rect width={W} height={H} fill="transparent" onClick={pickNearest} />
+
+        {/* Parts depots. A square, not a fifth colour: a depot is a different kind
+            of thing from a machine, and shape carries that without spending a legend
+            entry on it. Drawn under the crew and the machines because it never moves
+            and never needs attention. */}
+        {warehouses.map((wh) => {
+          const [x, y] = project(wh.latitude, wh.longitude);
+          const held = Object.values(wh.stock).reduce((s, n) => s + n, 0);
+          return (
+            <g
+              className="depot-marker"
+              key={wh.id}
+              role="img"
+              aria-label={`${wh.name}, parts depot, ${held} units in stock`}
+            >
+              <title>{`${wh.name} - ${held} units in stock`}</title>
+              {/* Mark only, no label. There are two of them, they never move, and
+                  their names are long: printed on the map they collided with the
+                  working-area labels and added two of the longest strings on a
+                  surface that is read at a glance. The key top-left says what a
+                  square is; the name is in the title and the accessible name. */}
+              <rect x={x - 5} y={y - 5} width="10" height="10" rx="2" />
+            </g>
+          );
+        })}
 
         {/* Technicians */}
         {technicians.map((t) => {
           const [x, y] = project(t.latitude, t.longitude);
           const busy = !t.available;
           return (
-            <g key={t.id}>
+            <g
+              key={t.id}
+              role="img"
+              aria-label={`${t.name}, technician, ${busy ? "on a job" : "available"}`}
+            >
               <path
                 d={`M${x},${y - 6} L${x + 5.5},${y + 4} L${x},${y + 1.5} L${x - 5.5},${y + 4} Z`}
-                fill={busy ? "#ffc266" : "#55617a"}
+                fill={busy ? "var(--map-tech-busy)" : "var(--map-tech)"}
               />
-              <text x={x + 9} y={y + 4} fill="#6c7691" fontSize="9.5"
-                    fontFamily="Barlow, sans-serif">
+              <text x={x + 9} y={y + 4} fill="var(--map-label)" fontSize="11"
+                    fontFamily="var(--font-sans)">
                 {t.name.split(" ")[0]}
               </text>
             </g>
           );
         })}
 
-        {/* Clicks that land between the hit discs — see pickNearest. Sits under the
-            markers so a disc, when you are inside one, still wins outright. */}
-        <rect width={W} height={H} fill="transparent" onClick={pickNearest} />
-
         {/* Assets */}
         {assets.map((a, i) => {
           const { x, y, hit } = markers[i];
-          const c = STATE_COLOR[a.state] ?? "#7e8798";
+          const group = STATE_GROUP[a.state] ?? "healthy";
+          const c = GROUP_COLOR[group];
           const sel = a.id === selectedId;
-          const alert = a.state === "silent" || a.state === "anomaly";
+          const alert = group === "attention";
           const forecast = riskById[a.id];
           const risky = !!forecast;
           const description =
-            `${a.id} — ${a.label} (${STATE_LABEL[a.state] ?? a.state})` +
-            (forecast ? ` · predicted failure in ~${forecast.horizon_hours ?? "?"}h` : "");
+            `${a.id}, ${a.label}. ${GROUP_LABEL[group]}` +
+            (a.offsite ? ". Outside the site perimeter" : "") +
+            (forecast?.horizon_hours != null
+              ? `. Failure forecast in about ${forecast.horizon_hours} hours`
+              : "");
           return (
             <g
               className="asset-marker"
@@ -430,7 +516,7 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
               role="button"
               tabIndex={0}
               aria-label={description}
-              aria-pressed={sel}
+              aria-current={sel ? "true" : undefined}
               onClick={() => onSelect(a.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
@@ -448,10 +534,16 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
               <circle className="marker-hit" cx={x} cy={y} r={hit} fill="transparent" />
               <title>{description}</title>
               {alert && (
-                <circle cx={x} cy={y} r="8" fill="none" stroke={c} strokeWidth="1.5">
-                  <animate attributeName="r" from="6" to="20" dur="1.6s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.7" to="0" dur="1.6s"
-                           repeatCount="indefinite" />
+                <circle cx={x} cy={y} r={still ? 12 : 8} fill="none" stroke={c}
+                        strokeWidth="1.5" opacity={still ? 0.6 : 1}>
+                  {!still && (
+                    <>
+                      <animate attributeName="r" from="6" to="20" dur="1.6s"
+                               repeatCount="indefinite" />
+                      <animate attributeName="opacity" from="0.7" to="0" dur="1.6s"
+                               repeatCount="indefinite" />
+                    </>
+                  )}
                 </circle>
               )}
               {/* A forecast, drawn distinctly from a fault. This machine is running
@@ -460,17 +552,21 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
                   halves of the system. Without it the map called a machine "healthy"
                   that the predictive panel had just put a day from failure. */}
               {risky && !alert && (
-                <circle cx={x} cy={y} r="9" fill="none" stroke="var(--warn, #f0a830)"
+                <circle cx={x} cy={y} r="9" fill="none" stroke="var(--map-handled)"
                         strokeWidth="1.3" strokeDasharray="2.5 2.5" opacity="0.9" />
               )}
               {a.offsite && (
-                <circle cx={x} cy={y} r="10" fill="none" stroke="#5aa9e6" strokeWidth="1.6" />
+                <circle cx={x} cy={y} r="10" fill="none" stroke="var(--map-nocoverage)"
+                        strokeWidth="1.6" />
               )}
-              {sel && <circle cx={x} cy={y} r="11" fill="none" stroke="#ff9e2c" strokeWidth="1.5" />}
-              <circle cx={x} cy={y} r={sel ? 6 : 4.6} fill={c} stroke="#0a1018" strokeWidth="1.5" />
+              {sel && (
+                <circle cx={x} cy={y} r="11" fill="none" stroke="var(--accent)" strokeWidth="1.8" />
+              )}
+              <circle cx={x} cy={y} r={sel ? 6 : 4.6} fill={c}
+                      stroke="var(--map-marker-stroke)" strokeWidth="1.5" />
               {(sel || alert) && (
-                <text x={x + 10} y={y + 4} fill="#ece6db" fontSize="10.5"
-                      fontFamily="IBM Plex Mono, monospace">
+                <text x={x + 10} y={y + 4} fill="var(--text)" fontSize="10"
+                      fontFamily="var(--font-mono)">
                   {a.id}
                 </text>
               )}
@@ -480,48 +576,62 @@ export function FleetMap({ assets, technicians, workOrders, deadZones, riskById 
 
         {/* Scale + orientation */}
         <g opacity="0.6">
-          <text x={W - PAD} y={PAD - 16} textAnchor="end" fill="#5d6980" fontSize="10"
-                fontFamily="Barlow Condensed, sans-serif" letterSpacing="1.6">
-            N ↑
+          <text x={W - PAD} y={PAD - 16} textAnchor="end" fill="var(--map-label)" fontSize="11"
+                fontFamily="var(--font-sans)" fontWeight="500">
+            N
           </text>
-          <line x1={PAD} y1={H - 20} x2={PAD + scaleBar.px} y2={H - 20} stroke="#5d6980"
+          <line x1={PAD} y1={H - 20} x2={PAD + scaleBar.px} y2={H - 20}
+                stroke="var(--map-label)" strokeWidth="1.5" />
+          <line x1={PAD} y1={H - 24} x2={PAD} y2={H - 16} stroke="var(--map-label)"
                 strokeWidth="1.5" />
-          <line x1={PAD} y1={H - 24} x2={PAD} y2={H - 16} stroke="#5d6980" strokeWidth="1.5" />
           <line x1={PAD + scaleBar.px} y1={H - 24} x2={PAD + scaleBar.px} y2={H - 16}
-                stroke="#5d6980" strokeWidth="1.5" />
-          <text x={PAD + scaleBar.px + 8} y={H - 16} fill="#5d6980" fontSize="10"
-                fontFamily="IBM Plex Mono, monospace">
+                stroke="var(--map-label)" strokeWidth="1.5" />
+          <text x={PAD + scaleBar.px + 8} y={H - 16} fill="var(--map-label)" fontSize="10"
+                fontFamily="var(--font-mono)">
             {scaleBar.km} km
           </text>
         </g>
       </svg>
 
+      {/* What the glyphs are. Separate from the colour key bottom-right, and in the
+          opposite corner, because they answer different questions: this one is what
+          kind of thing a mark is, that one is what state a machine is in. */}
+      <div className="map-key">
+        <span>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden focusable="false">
+            <path d="M6,1 L11.5,11 L6,8.5 L0.5,11 Z" fill="var(--map-tech)" />
+          </svg>
+          Technician
+        </span>
+        <span>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden focusable="false">
+            <rect x="1" y="1" width="10" height="10" rx="2" fill="var(--map-depot)" />
+          </svg>
+          Parts depot
+        </span>
+      </div>
+
+      {/* Four entries. The dead-zone, off-site and forecast rings used to have
+          their own swatches, which made an eight-item legend for a map somebody
+          glances at. Those three are labelled on the map itself where they occur,
+          so the legend only has to carry the thing every dot has: its state. */}
       <div className="map-legend">
-        {deadZones.length > 0 && (
-          <span>
-            <i style={{ background: "#5aa9e6", opacity: 0.5 }} />
-            learned dead zone
-          </span>
-        )}
-        {Object.entries(STATE_COLOR).map(([k, v]) => (
-          <span key={k}>
-            <i style={{ background: v }} />
-            {STATE_LABEL[k]}
+        {LEGEND.map((g) => (
+          <span key={g}>
+            <i className={`is-${g}`} />
+            {GROUP_LABEL[g]}
           </span>
         ))}
-        {assets.some((a) => a.offsite) && (
-          <span title="Still healthy and reporting — but outside the site perimeter.">
-            <i className="ring-solid" />
-            left the site
-          </span>
-        )}
-        {Object.keys(riskById).length > 0 && (
-          <span title="Running normally now; the forecast model expects a failure.">
-            <i className="ring" />
-            predicted failure
-          </span>
-        )}
       </div>
     </div>
   );
 }
+
+/**
+ * Memoised. ~62 websocket frames arrive per 2s tick, each in its own task, so
+ * React cannot batch them: the map was reconciling 500+ SVG nodes about thirty
+ * times a second. Every prop it takes is already reference-stable across
+ * telemetry frames, so this skips the work entirely on the frames that cannot
+ * change what it draws.
+ */
+export const FleetMap = memo(FleetMapImpl);
