@@ -147,6 +147,95 @@ def site_for(latitude: float, longitude: float) -> str:
 # ``if component in COMPONENT_PARTS`` and dispatches the generic kit instead.
 COMPONENT_PARTS: dict[str, tuple[str, int]] = _features.COMPONENT_PARTS
 
+
+# ── What a depot stocks, and what rides in the van ──────────────────────────
+#
+# Split by whether a technician could plausibly carry it. The four failing components
+# are pallet-scale: a 40 L/min hydraulic pump and an XL radiator core are forklift
+# items, not something six people each keep a spare of in a pickup. They live on a
+# depot shelf. The sensor kit and the service consumables are boxes, and they ride in
+# the van — which is why a failed reporting sensor still dispatches direct with no
+# detour, and a failed pump does not.
+VAN_STOCK: tuple[str, ...] = ("TELEMETRY-SENSOR-KIT",)
+
+# The scheduled-service kit. Preventive work draws exactly this, one per service, and
+# it is stocked like anything else so a routine job can be blocked by an empty shelf
+# in the same way an emergency one can.
+SERVICE_KIT_PART = "SERVICE-KIT-500"
+
+PART_LABELS: dict[str, str] = {
+    "HYD-PUMP-40L": "Hydraulic pump, 40 L/min",
+    "RADIATOR-CORE-XL": "Radiator core, XL",
+    "BEARING-SET-90": "Main bearing set, 90 mm",
+    "ALTERNATOR-24V": "Alternator, 24 V",
+    "TELEMETRY-SENSOR-KIT": "Telemetry sensor kit",
+    SERVICE_KIT_PART: "500-hour service kit",
+}
+
+# Reorder point per SKU — the level at or below which the inventory view calls it low.
+# Heavy components sit at 1 because a depot holding its last one is a depot that
+# cannot cover a second failure; consumables turn over fast enough to warrant more.
+PART_REORDER_AT: dict[str, int] = {
+    "HYD-PUMP-40L": 1,
+    "RADIATOR-CORE-XL": 1,
+    "BEARING-SET-90": 1,
+    "ALTERNATOR-24V": 1,
+    SERVICE_KIT_PART: 4,
+}
+
+
+def build_warehouses() -> list["Warehouse"]:
+    """Two parts depots, sited where they shorten the depot-to-machine leg most.
+
+    Not chosen by eye. Taking the five working areas as candidate sites and scoring
+    every pair by the mean distance from a fleet machine to its nearer depot, Trojena
+    Ridge + Coastal Access wins at 29.2 km against 33.8 km for the next plausible
+    pairing. That second leg is driven on every heavy-component job, so it is the one
+    worth minimising.
+
+    The stock split is deliberate and load-bearing for the routing. Coastal Access is
+    the main store and carries everything; Trojena is a forward store that does not
+    hold an alternator at all. So an alternator failure at Trojena — which is exactly
+    the demo's hardware scenario — cannot be served by the depot next door, and the
+    dispatch has to reason about which technician can collect one and still arrive
+    first. With both depots holding one of everything, the pickup would add a constant
+    to every journey and never change who goes.
+    """
+    from .models import Warehouse
+
+    return [
+        Warehouse(
+            id="WH-01",
+            name="Coastal Access Depot",
+            # Offset from the working area's own centre rather than sitting on it.
+            # A depot is a yard beside the works, not the middle of them, and on the
+            # map a marker at the centroid puts its label on top of the area label.
+            latitude=27.655,
+            longitude=35.118,
+            stock={
+                "HYD-PUMP-40L": 2,
+                "RADIATOR-CORE-XL": 2,
+                "BEARING-SET-90": 3,
+                "ALTERNATOR-24V": 2,
+                SERVICE_KIT_PART: 12,
+            },
+        ),
+        Warehouse(
+            id="WH-02",
+            name="Trojena Ridge Depot",
+            latitude=27.327,
+            longitude=34.733,
+            stock={
+                "HYD-PUMP-40L": 1,
+                "BEARING-SET-90": 2,
+                # No alternator and no radiator core on this shelf. Absent rather than
+                # zero: this forward store does not carry them, which is a different
+                # thing from having run out.
+                SERVICE_KIT_PART: 6,
+            },
+        ),
+    ]
+
 # Fallback by fault mode, for when the component model has nothing to go on. A
 # sensor fault needs no component diagnosis — the sensor is the fault — and a
 # hardware fault we cannot pin down still gets the commonest part rather than
@@ -258,6 +347,13 @@ def stable_int(key: str) -> int:
     return int(hashlib.md5(key.encode()).hexdigest(), 16)
 
 
+# Hours between scheduled services. 500 is the common major-service interval on
+# heavy plant, and it is the one figure here a fleet would override per machine class
+# — kept as a single constant because the demo fleet is mixed and nothing downstream
+# depends on it varying.
+_SERVICE_INTERVAL_HOURS = 500.0
+
+
 def _asset_from_id(asset_id: str) -> Asset:
     pool = asset_pool()[asset_id]
     # Current position = latest NORMAL reading if any, else latest of anything.
@@ -265,6 +361,15 @@ def _asset_from_id(asset_id: str) -> Asset:
     ref = (normal or [r for rs in pool.values() for r in rs])[-1]
     kind = _KINDS[stable_int(asset_id) % len(_KINDS)]
     num = asset_id.split("-")[-1].lstrip("0") or "0"
+    # ── the service clock ───────────────────────────────────────────────────
+    # Hours on the machine and hours since its last service, seeded from the id so a
+    # given machine comes up in the same place in its cycle every run — the preventive
+    # list has to be stable between a rehearsal and a performance for the same reason
+    # the forecast does. Spread across 0..interval+80 rather than 0..interval so a
+    # handful of machines start genuinely overdue: a service board on which nothing is
+    # ever late is a service board nobody would recognise.
+    h = stable_int(asset_id + ":svc")
+    interval = _SERVICE_INTERVAL_HOURS
     return Asset(
         id=asset_id,
         kind=kind,
@@ -273,6 +378,9 @@ def _asset_from_id(asset_id: str) -> Asset:
         site=site_for(ref["latitude"], ref["longitude"]),
         latitude=ref["latitude"],
         longitude=ref["longitude"],
+        engine_hours=round(1200 + (h % 84_000) / 10.0, 1),
+        service_interval_hours=interval,
+        hours_since_service=round((h // 7) % int(interval + 80), 1),
     )
 
 
@@ -353,7 +461,7 @@ def build_demo_fleet(size: int | None = None) -> list[Asset]:
 
 
 def build_technicians() -> list[Technician]:
-    """Six technicians spread across the site, collectively covering every part."""
+    """Six technicians spread across the site, each carrying the same van stock."""
     rng = random.Random(7)
     # Bounding box of the demo fleet, padded slightly.
     fleet = build_demo_fleet()
@@ -361,7 +469,6 @@ def build_technicians() -> list[Technician]:
     lons = [a.longitude for a in fleet]
     lat_lo, lat_hi = min(lats), max(lats)
     lon_lo, lon_hi = min(lons), max(lons)
-    all_parts = [p for p, _ in COMPONENT_PARTS.values()]
     names = [
         "Ziad Khalifeh",
         "Mariam Haddad",
@@ -379,15 +486,13 @@ def build_technicians() -> list[Technician]:
                 latitude=rng.uniform(lat_lo, lat_hi),
                 longitude=rng.uniform(lon_lo, lon_hi),
                 available=True,
-                # Everyone carries the sensor kit. The four component parts are split
-                # across six people, so two carry a second one — which is why "nearest"
-                # and "nearest who can actually fix it" are different questions.
-                parts_on_hand=sorted(
-                    {all_parts[i % len(all_parts)],
-                     all_parts[(i + 2) % len(all_parts)] if i >= len(all_parts) else
-                     all_parts[i % len(all_parts)],
-                     "TELEMETRY-SENSOR-KIT"}
-                ),
+                # Everyone carries the same van stock, because that is what a van
+                # holds. "Nearest" and "nearest who can actually fix it" used to be
+                # different questions because the components were split across the
+                # crew; now the components are in depots and the question that
+                # separates them is "nearest who can collect the part and still get
+                # there first", which is a routing problem rather than a packing one.
+                parts_on_hand=list(VAN_STOCK),
             )
         )
     return techs

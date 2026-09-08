@@ -31,10 +31,13 @@ from .tools import (
     assess_silence,
     check_device_status,
     create_work_order,
+    dispatch_observation,
+    dispatch_thought,
     get_device_location,
     park_awaiting_crew,
     predict_fault,
     queued_observation,
+    unassigned_thought,
     notify_operator,
     schedule_recheck,
 )
@@ -268,39 +271,35 @@ async def run_rule_investigation(incident_id: str) -> None:
     # about how an outcome is recorded is the recurring bug in this codebase.
     if wo.technician_id is None:
         await t.step(
-            "The job is ready but every technician on the crew is already out on one. I am not "
-            "going to record a dispatch that is not happening: the work order is queued "
-            "unassigned, and the machine stays on the sweep so it is picked up the moment "
-            "somebody frees.",
+            unassigned_thought(wo),
             tool="ops.create_work_order",
             args={
                 "incident_id": incident_id,
                 "asset_id": asset_id,
                 "part": wo.part,
-                "status": "queued",
+                "status": wo.status,
             },
             observation=queued_observation(wo),
         )
         park_awaiting_crew(incident_id, asset_id, wo, fault)
-        log.info("%s queued %s — no technician free", incident_id, wo.id)
+        log.info(
+            "%s raised %s unassigned — %s",
+            incident_id,
+            wo.id,
+            "no stock of " + wo.part if wo.status == "awaiting_part" else "no technician free",
+        )
         return
 
     await t.step(
-        "Generated work order and assigned the nearest technician who is actually carrying "
-        "the part. Closest is not the same as soonest fixed.",
+        dispatch_thought(wo),
         tool="ops.create_work_order",
-        args={"incident_id": incident_id, "asset_id": asset_id, "part": wo.part},
-        observation=(
-            f"{wo.id} -> {wo.technician_name or 'unassigned'} "
-            f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min) carrying {wo.part or 'n/a'}; "
-            f"crew position source={wo.technician_located_via}"
-            + (
-                f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but is "
-                f"not carrying a {wo.part} — a closer technician who cannot fix it is a second trip."
-                if wo.nearest_skipped_name
-                else ""
-            )
-        ),
+        args={
+            "incident_id": incident_id,
+            "asset_id": asset_id,
+            "part": wo.part,
+            "warehouse": wo.warehouse_id or None,
+        },
+        observation=dispatch_observation(wo),
     )
 
     store.set_asset_state(asset_id, "dispatched")

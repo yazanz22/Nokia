@@ -18,9 +18,13 @@ from ..nac import DeviceLocation, NetworkClient, Reachability, get_network_clien
 # distances have to come out of the same function as perimeter distances or the map
 # and the work order can disagree about what a kilometre is. Bound under the
 # module-private name the dispatch code below reads with.
+from ..config import get_settings
 from ..nac.base import haversine_km as _haversine_km
+from ..seed import VAN_STOCK
 from ..nac.factory import get_simulated_client
 from ..ml.client import fault_model
+from ..events import bus
+from ..models import WsEvent
 from ..store import store
 from .memory import memory
 
@@ -401,7 +405,11 @@ def queued_order_for(asset_id: str) -> WorkOrder | None:
     investigation is a different incident about the same broken machine.
     """
     return next(
-        (w for w in store.work_orders.values() if w.asset_id == asset_id and w.status == "queued"),
+        (
+            w
+            for w in store.work_orders.values()
+            if w.asset_id == asset_id and w.status in ("queued", "awaiting_part")
+        ),
         None,
     )
 
@@ -424,11 +432,45 @@ def _record_queued(wo: WorkOrder) -> None:
         store.dispatches_issued = max(0, store.dispatches_issued - 1)
 
 
+def unassigned_thought(wo: WorkOrder) -> str:
+    """The agent's own words for a job it could not hand to anybody.
+
+    Two different blockers, two different sentences, one source for both. A crew that
+    is fully committed is a scheduling problem that resolves itself within the hour; a
+    component no depot on site holds does not resolve at all until somebody orders one,
+    and telling an operator "waiting for a technician" when the truth is "waiting for a
+    part" sends them to argue with the wrong person.
+    """
+    if wo.status == "awaiting_part":
+        return (
+            f"The fault is confirmed and the part is named, but no depot on site holds a "
+            f"{wo.part}. There is nothing for a technician to collect, so sending one now "
+            f"would be a wasted journey with a diagnosis at the end of it. The job is "
+            f"raised against the machine and flagged for resupply, and the machine stays "
+            f"on the sweep."
+        )
+    return (
+        "The job is ready but every technician on the crew is already out on one. I am not "
+        "going to record a dispatch that is not happening: the work order is raised "
+        "unassigned, and the machine stays on the sweep so it is picked up the moment "
+        "somebody frees."
+    )
+
+
 def queued_observation(wo: WorkOrder) -> str:
     """What the trace says about a job that could not be given to anyone.
 
     Shared by both agents so the two cannot describe the same outcome differently.
     """
+    if wo.status == "awaiting_part":
+        stocked = store.stock_on_hand(wo.part)
+        where = (
+            "; nearest stock is " + ", ".join(sorted(stocked)) if stocked else " at any depot"
+        )
+        return (
+            f"{wo.id} raised against {wo.asset_id} but blocked: no {wo.part} in stock"
+            f"{where} — flagged for resupply, nobody dispatched"
+        )
     crew = len(store.technicians)
     busy = sum(1 for t in store.technicians.values() if not t.available)
     return (
@@ -437,13 +479,62 @@ def queued_observation(wo: WorkOrder) -> str:
     )
 
 
+def dispatch_thought(wo: WorkOrder) -> str:
+    """The agent's own words for an assignment that is going ahead.
+
+    The old wording claimed the assignment went to "the nearest technician who is
+    actually carrying the part", which stopped being true the moment components moved
+    into depots. Now the sentence has to explain a two-leg journey, and it is shared so
+    it cannot say one thing in the LLM agent and another in the rule agent.
+    """
+    if wo.warehouse_id:
+        return (
+            f"Work order raised. The {wo.part} is a depot item, so the journey is "
+            f"technician to {wo.warehouse_name}, load, then on to the machine — and the "
+            f"person who arrives first is the one with the shortest combined run, not the "
+            f"one standing nearest. Assigned on arrival time."
+        )
+    return (
+        "Work order raised. The part rides in the van, so there is no depot to collect "
+        "from and the nearest technician is also the soonest."
+    )
+
+
+def dispatch_observation(wo: WorkOrder) -> str:
+    """The recorded outcome of an assignment. Shared by both agents."""
+    route = (
+        f"{wo.leg_to_warehouse_km:.1f} km to {wo.warehouse_name}, "
+        f"{wo.loading_minutes} min loading, {wo.leg_to_asset_km:.1f} km on"
+        if wo.warehouse_id
+        else f"{wo.distance_km:.1f} km direct"
+    )
+    out = (
+        f"{wo.id} -> {wo.technician_name or 'unassigned'} carrying {wo.part or 'n/a'} "
+        f"({route}; ETA {wo.eta_minutes} min); crew position source="
+        f"{wo.technician_located_via}"
+    )
+    if wo.nearest_skipped_name:
+        out += (
+            f". {wo.nearest_skipped_name} is nearer the machine at "
+            f"{wo.nearest_skipped_km:.1f} km but would arrive "
+            f"{wo.nearest_skipped_minutes_later} min later once the part is collected — "
+            f"closer is not sooner when the part is not in the van."
+        )
+    return out
+
+
 def park_awaiting_crew(
     incident_id: str,
     asset_id: str,
     wo: WorkOrder,
     fault: FaultPrediction,
 ) -> str:
-    """Close out a confirmed fault that has a job but nobody to send to it.
+    """Close out a confirmed fault that has a job but nobody going to it.
+
+    Two reasons that happens — no free technician, or no depot holding the component —
+    and the incident records which. Named for the crew case because that is the one it
+    was written for; it covers both because both must produce the same honest shape of
+    record, and splitting it into two near-identical functions is how they drift.
 
     The whole crew being busy used to produce a record that contradicted itself: the
     work order was written as ``status="created"`` with no technician and a zero ETA,
@@ -467,18 +558,130 @@ def park_awaiting_crew(
     asset = store.assets.get(asset_id)
     crew = len(store.technicians)
     component = f" ({fault.component.replace('_', ' ')})" if fault.component else ""
-    resolution = (
-        f"{fault.mode} confirmed @ {fault.confidence:.0%}{component}, but all {crew} "
-        f"technicians are already on jobs. {wo.id} is queued unassigned with "
-        f"{wo.part or 'no part'} against it — nobody is en route and no ETA is promised. "
-        f"The machine stays under watch and the job goes to the first technician who frees."
-    )
+    if wo.status == "awaiting_part":
+        status = "awaiting_part"
+        resolution = (
+            f"{fault.mode} confirmed @ {fault.confidence:.0%}{component}, but no depot on "
+            f"site stocks a {wo.part}. {wo.id} is raised against the machine and flagged "
+            f"for resupply — nobody is en route, because there is nothing for them to "
+            f"collect. The machine stays under watch and the job releases when the part "
+            f"lands."
+        )
+    else:
+        status = "awaiting_crew"
+        resolution = (
+            f"{fault.mode} confirmed @ {fault.confidence:.0%}{component}, but all {crew} "
+            f"technicians are already on jobs. {wo.id} is queued unassigned with "
+            f"{wo.part or 'no part'} against it — nobody is en route and no ETA is promised. "
+            f"The machine stays under watch and the job goes to the first technician who frees."
+        )
     store.set_asset_state(asset_id, "anomaly", last_seen=utcnow())
-    store.close_incident(inc, status="awaiting_crew", resolution=resolution)
+    store.close_incident(inc, status=status, resolution=resolution)
     if asset is not None:
-        memory.record(asset_id, asset.latitude, asset.longitude, "awaiting_crew")
+        memory.record(asset_id, asset.latitude, asset.longitude, status)
     store.publish_kpis()
     return resolution
+
+
+# ── routing constants ───────────────────────────────────────────────────────
+# Effective speed across a live construction site, and the time between a job landing
+# and the van actually moving. Both were already baked into the old single-leg ETA;
+# they are named here because the journey now has two legs and a dwell in the middle,
+# and a magic 45 buried twice in an arithmetic expression is how two halves drift
+# apart.
+SITE_SPEED_KMH = 45.0
+MOBILISATION_MINUTES = 10
+
+
+def _travel_minutes(km: float) -> float:
+    return km / SITE_SPEED_KMH * 60.0
+
+
+def _route_options(
+    crew: list[Technician],
+    parts: list[str],
+    asset_lat: float,
+    asset_lon: float,
+) -> list[tuple[float, Technician, str, float, float]]:
+    """Every way of getting ``parts`` to the machine, ranked by arrival time.
+
+    Returns ``(total_minutes, technician, warehouse_id, leg1_km, leg2_km)``, soonest
+    first. Parts that ride in the van impose no depot leg; if nothing on the list has
+    to be collected, ``warehouse_id`` is empty and the run is direct.
+
+    This is the change a field-service reviewer asked for. Dispatching on
+    distance-to-machine is only correct when the technician already has what they need;
+    the moment the part lives in a depot, the person who arrives first is the one whose
+    *combined* journey is shortest, and that is frequently not the nearest one. Ranked
+    rather than reduced to a single winner so the caller can walk down the list when a
+    depot is emptied by a dispatch running alongside this one.
+    """
+    loading = get_settings().warehouse_loading_minutes
+    depot_parts = [p for p in parts if p and p not in VAN_STOCK]
+    options: list[tuple[float, Technician, str, float, float]] = []
+
+    if not depot_parts:
+        # Straight there. A telemetry sensor kit is a box in the back of the van, so a
+        # sensor fault never inherits a depot detour it does not need — which is also
+        # what keeps the graded response graded: the cheap outcome stays cheap.
+        for t in crew:
+            leg = _haversine_km(t.latitude, t.longitude, asset_lat, asset_lon)
+            options.append((_travel_minutes(leg) + MOBILISATION_MINUTES, t, "", 0.0, leg))
+        options.sort(key=lambda o: o[0])
+        return options
+
+    for wh_id in store.depots_stocking(depot_parts):
+        wh = store.warehouses[wh_id]
+        leg2 = _haversine_km(wh.latitude, wh.longitude, asset_lat, asset_lon)
+        for t in crew:
+            leg1 = _haversine_km(t.latitude, t.longitude, wh.latitude, wh.longitude)
+            total = _travel_minutes(leg1 + leg2) + loading + MOBILISATION_MINUTES
+            options.append((total, t, wh_id, leg1, leg2))
+    options.sort(key=lambda o: o[0])
+    return options
+
+
+def _choose_and_claim(
+    free: list[Technician],
+    parts: list[str],
+    asset_lat: float,
+    asset_lon: float,
+) -> tuple[Technician | None, str, float, float, float]:
+    """Pick the soonest workable route and take its technician and stock off the board.
+
+    Synchronous from the first read to the last claim, and it has to stay that way. The
+    caller has just spent ~3.6s on CAMARA Location Retrieval, which is ample room for a
+    second investigation to decide from the same snapshot — that is how two work orders
+    were once issued to one technician. Stock has the same exposure with a worse failure
+    mode, because it is invisible: two investigations needing the last alternator would
+    both be promised it, and the second technician would find the empty shelf only after
+    driving to the depot.
+
+    Walks the ranked routes rather than committing to the best one, so a depot emptied
+    between ranking and claiming costs this dispatch its first choice instead of its
+    dispatch.
+    """
+    depot_parts = [p for p in parts if p and p not in VAN_STOCK]
+    for total, cand, wh_id, l1, l2 in _route_options(free, parts, asset_lat, asset_lon):
+        claimed: list[str] = []
+        if wh_id:
+            for p in depot_parts:
+                if store.claim_part(wh_id, p):
+                    claimed.append(p)
+                else:
+                    break
+            if len(claimed) != len(depot_parts):
+                for p in claimed:
+                    store.release_part(wh_id, p)
+                continue
+        if not store.claim_technician(cand):
+            # Nothing above yields, so this cannot lose in practice — but stock claimed
+            # for a technician we did not get would sit off the shelf forever.
+            for p in claimed:
+                store.release_part(wh_id, p)
+            continue
+        return cand, wh_id, l1, l2, total
+    return None, "", 0.0, 0.0, 0.0
 
 
 async def create_work_order(
@@ -489,115 +692,211 @@ async def create_work_order(
 ) -> WorkOrder:
     part = fault.recommended_part
 
-    # Establish where the whole available crew is *now*, once. Both questions below —
-    # who is nearest with the part, and who was nearer without it — are answered from
+    # Establish where the whole available crew is *now*, once. Every question below —
+    # who reaches the machine soonest, and who was nearer but slower — is answered from
     # the same set of positions. Locating twice would bill the Location Retrieval API
     # twice per dispatch and, worse, compare people measured at different moments.
     available = [t for t in store.technicians.values() if t.available]
     crew_source = await locate_crew(available)
 
     # ── choose and claim, with no await in between ──────────────────────────────
-    # Everything from here down to `store.claim_technician` is deliberately
-    # synchronous. The list above is ~3.6s stale by the time we get here — locating
-    # the crew is serial and each CAMARA round trip costs 0.6s — which is ample room
-    # for a second investigation to run its own dispatch alongside this one. It did:
-    # two faults injected a few seconds apart produced WO-0002 and WO-0003 both
-    # assigned to Ziad Khalifeh, 90 km one way and 33 km the other, because both runs
-    # decided from a snapshot taken before either had claimed anybody.
-    #
-    # So the free crew is re-read here, at the moment of the decision, and the winner
-    # is taken off the board before the function yields again. Anyone claimed while we
-    # were on the phone to the network simply is not a candidate any more — for the
-    # assignment or for the "someone nearer was skipped" note below, which would
-    # otherwise name a technician who is already driving to a different machine.
+    # Everything from here down to the claims is deliberately synchronous. The list
+    # above is ~3.6s stale by the time we get here — locating the crew is serial and
+    # each CAMARA round trip costs 0.6s — which is ample room for a second
+    # investigation to run its own dispatch alongside this one. It did: two faults
+    # injected a few seconds apart produced WO-0002 and WO-0003 both assigned to Ziad
+    # Khalifeh, because both runs decided from a snapshot taken before either had
+    # claimed anybody. Stock is now on the same footing, and its failure mode is worse
+    # because it is invisible: two investigations needing the last alternator would
+    # both be promised it, and the second technician would find the empty shelf only
+    # after driving to the depot.
     free = [t for t in available if t.available]
 
-    # Nearest available technician who carries the required part.
-    candidates = [t for t in free if not part or part in t.parts_on_hand]
-    if not candidates:  # relax the part constraint rather than fail to dispatch
-        candidates = free
+    # A part nobody stocks is a different problem from a crew nobody has spare, and the
+    # work order says which. Checked before the ranking so the distinction survives the
+    # case where both are true at once.
+    part_unavailable = (
+        bool(part) and part not in VAN_STOCK and not store.depots_stocking([part])
+    )
+    tech: Technician | None = None
+    warehouse_id = ""
+    leg1 = leg2 = total_minutes = 0.0
+    if free and not part_unavailable:
+        tech, warehouse_id, leg1, leg2, total_minutes = _choose_and_claim(
+            free, [part], location.latitude, location.longitude
+        )
+    # ── end of the critical section ─────────────────────────────────────────────
 
-    # Someone closer who cannot fix it is not a better answer, but on a map it looks
-    # like one. Record the skipped-but-nearer person so the reasoning is visible
-    # instead of the dispatch appearing arbitrary.
-    skipped_closer: Technician | None = None
+    # Who was *nearest the machine*, and how much later they would actually have
+    # arrived. On a map, driving past a closer person looks like a bug; this is the
+    # line that explains it. Same idea as the field it replaces — which named someone
+    # closer who was not carrying the part — measured in the unit that now decides it.
+    skipped_name = ""
     skipped_km = 0.0
-    if part:
-        for other in free:
-            if part in other.parts_on_hand:
-                continue
-            km = _haversine_km(other.latitude, other.longitude,
-                               location.latitude, location.longitude)
-            if skipped_closer is None or km < skipped_km:
-                skipped_closer, skipped_km = other, km
-
-    tech = None
-    distance = 0.0
-    if candidates:
-        tech, distance = min(
+    skipped_later = 0
+    if tech is not None and free:
+        nearest, nearest_km = min(
             (
                 (t, _haversine_km(t.latitude, t.longitude, location.latitude, location.longitude))
-                for t in candidates
+                for t in free
             ),
             key=lambda pair: pair[1],
         )
-        # Claimed here rather than after the work order is built: the store write is
-        # several statements away, and only the first one of these that runs may have
-        # this person. Nothing above yields, so this cannot lose — the return value is
-        # the store's guarantee of that, not a case this caller has to handle.
-        store.claim_technician(tech)
-    # ── end of the critical section ─────────────────────────────────────────────
+        chosen_km = _haversine_km(
+            tech.latitude, tech.longitude, location.latitude, location.longitude
+        )
+        # Compare what will actually be displayed, not full float precision: both
+        # numbers reach the card rounded to a tenth, and someone "nearer" by eight
+        # metres produced a card that contradicted itself across its own two lines.
+        if nearest.id != tech.id and round(nearest_km, 1) < round(chosen_km, 1):
+            theirs = _route_options([nearest], [part], location.latitude, location.longitude)
+            if theirs and theirs[0][0] > total_minutes:
+                skipped_name = nearest.name
+                skipped_km = round(nearest_km, 1)
+                skipped_later = int(round(theirs[0][0] - total_minutes))
 
-    # Only worth mentioning if they were genuinely nearer than whoever we chose —
-    # nearer at the precision the operator is shown, not at full float precision.
-    # The comparison used the raw distances while both numbers are written to the work
-    # order rounded to a tenth, so someone 12.36 km out beat a chosen technician at
-    # 12.44 km — nearer by eight metres — and the card then read "Ziad Khalifeh is
-    # nearer at 12.4 km" beside an assigned technician also printed at 12.4 km. The
-    # card contradicting itself in its own two lines, on screen during the dispatch
-    # beat of the demo. Round first and compare what will actually be displayed, so
-    # the claim and the numbers under it agree. Rounding is monotonic, so this only
-    # ever suppresses that tie — a visibly nearer technician is still named.
-    distance_km = round(distance, 1)
-    skipped_display = round(skipped_km, 1)
-    if skipped_closer is not None and skipped_display >= distance_km:
-        skipped_closer = None
-
-    # A job already waiting on this machine is *this* job — the re-investigation that a
-    # queued order deliberately invites. Reuse its id so the operator watches one card
-    # go from "queued" to "assigned" instead of collecting a new card every sweep.
+    # A job already waiting on this machine is *this* job — the re-investigation that an
+    # unassigned order deliberately invites. Reuse its id so the operator watches one
+    # card change status instead of collecting a new card every sweep.
     waiting = queued_order_for(asset_id)
 
+    if tech is not None:
+        status = "assigned"
+    elif part_unavailable:
+        status = "awaiting_part"
+    else:
+        status = "queued"
+
+    wh = store.warehouses.get(warehouse_id) if warehouse_id else None
     wo = WorkOrder(
         id=waiting.id if waiting is not None else store.next_work_order_id(),
         incident_id=incident_id,
         asset_id=asset_id,
-        # "queued", never "created": a work order with no technician on it is not a
-        # dispatch, and both the card and the incident record now say so out loud.
-        status="assigned" if tech else "queued",
+        # Never "created" without somebody on it: a work order with no technician is
+        # not a dispatch, and both the card and the incident record say so out loud.
+        status=status,
+        maintenance_type="corrective",
         fault_mode=fault.mode,
         component=fault.component,
         confidence=fault.confidence,
         component_confidence=fault.component_confidence,
         part=part,
+        parts=[part] if part else [],
         asset_latitude=location.latitude,
         asset_longitude=location.longitude,
         technician_id=tech.id if tech else None,
         technician_name=tech.name if tech else "",
         technician_located_via=crew_source,
-        distance_km=distance_km,
-        # ~45 km/h effective across a live construction site + 10 min mobilisation.
-        eta_minutes=int(round(distance / 45.0 * 60)) + 10 if tech else 0,
-        nearest_skipped_name=skipped_closer.name if skipped_closer else "",
-        nearest_skipped_km=skipped_display if skipped_closer else 0.0,
+        warehouse_id=warehouse_id,
+        warehouse_name=wh.name if wh else "",
+        leg_to_warehouse_km=round(leg1, 1),
+        leg_to_asset_km=round(leg2, 1),
+        loading_minutes=get_settings().warehouse_loading_minutes if warehouse_id else 0,
+        distance_km=round(leg1 + leg2, 1),
+        eta_minutes=int(round(total_minutes)) if tech else 0,
+        nearest_skipped_name=skipped_name,
+        nearest_skipped_km=skipped_km,
+        nearest_skipped_minutes_later=skipped_later,
     )
-    # `created_at` defaults to now, and that is deliberate on both branches. It is the
+    # `created_at` defaults to now, and that is deliberate on every branch. It is the
     # clock `store.advance_work_orders` runs the repair against — so it must start when
-    # a technician actually takes the job, not while it sat in a queue with nobody on
-    # it, and re-queueing has to push it forward or a waiting job would "complete"
-    # itself after WORK_ORDER_COMPLETE_SECONDS with no one having gone anywhere.
+    # a technician actually takes the job, not while it sat unassigned, and re-queueing
+    # has to push it forward or a waiting job would "complete" itself after
+    # WORK_ORDER_COMPLETE_SECONDS with no one having gone anywhere.
     if tech is None:
         _record_queued(wo)
     else:
         store.add_work_order(wo)
     return wo
+
+
+async def create_scheduled_work_order(
+    asset_id: str,
+    maintenance_type: str,
+    parts: list[str],
+    *,
+    component: str = "",
+    component_confidence: float = 0.0,
+    bundled_service: bool = False,
+    reason: str = "",
+) -> WorkOrder:
+    """Raise a planned visit — preventive or predictive — for a machine that has not failed.
+
+    The counterpart to ``create_work_order``, and deliberately a separate entry point
+    rather than a flag on it. That one starts from an incident, a fault classification
+    and a network verdict, none of which exist here: nothing has broken, so there is
+    nothing to diagnose and no silence to explain. What the two share is the part that
+    matters — the same depot routing, the same atomic claim on stock and crew, and the
+    same refusal to write a dispatch with nobody on it.
+
+    Located from the machine's own recorded position rather than CAMARA Location
+    Retrieval. That call earns its place when a device has gone dark and cannot report
+    where it is; a machine that is running and streaming already told us, and spending
+    a network lookup to re-learn it would be theatre.
+    """
+    asset = store.assets[asset_id]
+    available = [t for t in store.technicians.values() if t.available]
+    crew_source = await locate_crew(available)
+    free = [t for t in available if t.available]
+
+    wanted = [p for p in parts if p]
+    depot_parts = [p for p in wanted if p not in VAN_STOCK]
+    part_unavailable = bool(depot_parts) and not store.depots_stocking(depot_parts)
+
+    tech: Technician | None = None
+    warehouse_id = ""
+    leg1 = leg2 = total_minutes = 0.0
+    if free and not part_unavailable:
+        tech, warehouse_id, leg1, leg2, total_minutes = _choose_and_claim(
+            free, wanted, asset.latitude, asset.longitude
+        )
+
+    if tech is not None:
+        status = "assigned"
+    elif part_unavailable:
+        status = "awaiting_part"
+    else:
+        status = "queued"
+
+    wh = store.warehouses.get(warehouse_id) if warehouse_id else None
+    wo = WorkOrder(
+        id=store.next_work_order_id(),
+        # No incident, and that is the point: this work is scheduled, not triggered by
+        # something going wrong.
+        incident_id="",
+        asset_id=asset_id,
+        status=status,
+        maintenance_type=maintenance_type,  # type: ignore[arg-type]
+        fault_mode=reason,
+        component=component,
+        component_confidence=component_confidence,
+        part=wanted[0] if wanted else "",
+        parts=wanted,
+        bundled_service=bundled_service,
+        asset_latitude=asset.latitude,
+        asset_longitude=asset.longitude,
+        technician_id=tech.id if tech else None,
+        technician_name=tech.name if tech else "",
+        technician_located_via=crew_source,
+        warehouse_id=warehouse_id,
+        warehouse_name=wh.name if wh else "",
+        leg_to_warehouse_km=round(leg1, 1),
+        leg_to_asset_km=round(leg2, 1),
+        loading_minutes=get_settings().warehouse_loading_minutes if warehouse_id else 0,
+        distance_km=round(leg1 + leg2, 1),
+        eta_minutes=int(round(total_minutes)) if tech else 0,
+    )
+    if tech is None:
+        _record_queued(wo)
+    else:
+        store.add_work_order(wo)
+    return wo
+
+
+def clear_service(asset_id: str) -> None:
+    """Reset a machine's service clock. Called when a visit that serviced it finishes."""
+    asset = store.assets.get(asset_id)
+    if asset is None:
+        return
+    asset.hours_since_service = 0.0
+    bus.publish(WsEvent(type="asset_update", payload=asset.model_dump(mode="json")))

@@ -23,11 +23,12 @@ from .models import (
     Technician,
     TelemetrySample,
     TraceStep,
+    Warehouse,
     WorkOrder,
     WsEvent,
     utcnow,
 )
-from .seed import build_demo_fleet, build_technicians
+from .seed import build_demo_fleet, build_technicians, build_warehouses
 
 log = logging.getLogger("store")
 
@@ -66,6 +67,7 @@ class Store:
         self.epoch = 0
         self.assets: dict[str, Asset] = {}
         self.technicians: dict[str, Technician] = {}
+        self.warehouses: dict[str, Warehouse] = {}
         self.incidents: dict[str, Incident] = {}
         # Which epoch each in-flight investigation is reasoning about, keyed by the task
         # running it and stamped every time that task narrates a step. Deliberately not
@@ -84,6 +86,7 @@ class Store:
         self.false_dispatches_avoided = 0
         self.incidents_prevented = 0
         self.dispatches_issued = 0
+        self.no_fault_found = 0
         self._triage_durations: list[float] = []
         self.reset()
 
@@ -92,6 +95,10 @@ class Store:
         self.epoch += 1
         self.assets = {a.id: a for a in build_demo_fleet()}
         self.technicians = {t.id: t for t in build_technicians()}
+        # Stock comes back with the fleet. A depot whose shelves stayed empty across a
+        # reset would make the second run of a demo behave differently from the first,
+        # which is the class of thing that only ever shows up on stage.
+        self.warehouses = {w.id: w for w in build_warehouses()}
         self.incidents.clear()
         self.trace.clear()
         self.work_orders.clear()
@@ -103,6 +110,7 @@ class Store:
         self.false_dispatches_avoided = 0
         self.incidents_prevented = 0
         self.dispatches_issued = 0
+        self.no_fault_found = 0
         self._triage_durations.clear()
 
     # ── assets / telemetry ────────────────────────────────────────────────
@@ -205,6 +213,90 @@ class Store:
         self.publish_technicians()
         return True
 
+    def stock_on_hand(self, part: str) -> dict[str, int]:
+        """Which depots hold ``part`` right now, id → units. Empty means nobody does."""
+        return {
+            w.id: w.stock[part]
+            for w in self.warehouses.values()
+            if w.stock.get(part, 0) > 0
+        }
+
+    def depots_stocking(self, parts: list[str]) -> list[str]:
+        """Depots holding *every* one of ``parts`` right now.
+
+        All-or-nothing on purpose. A visit that needs a component and a service kit is
+        one journey to one depot; a depot holding half the list cannot serve it, and
+        splitting the pickup across two depots is a third leg nobody asked for.
+        """
+        wanted = [p for p in parts if p]
+        return [
+            w.id
+            for w in self.warehouses.values()
+            if all(w.stock.get(p, 0) > 0 for p in wanted)
+        ]
+
+    def claim_part(self, warehouse_id: str, part: str) -> bool:
+        """Take one unit off a depot shelf. False means it had already gone.
+
+        The same synchronous test-and-set as ``claim_technician``, and it exists for
+        the same reason: ``create_work_order`` spends seconds on CAMARA Location
+        Retrieval between reading stock and committing to a depot, and two overlapping
+        investigations that both need the last alternator would otherwise both be told
+        they had one. The failure is worse than the technician version, because it is
+        invisible — two trucks arrive at the same depot and the second driver finds an
+        empty shelf, having already made the journey.
+
+        Callers must select a depot from ``stock_on_hand`` and claim it inside the same
+        synchronous block, with no await in between.
+        """
+        wh = self.warehouses.get(warehouse_id)
+        if wh is None or wh.stock.get(part, 0) <= 0:
+            return False
+        wh.stock[part] -= 1
+        self.publish_warehouses()
+        return True
+
+    def release_part(self, warehouse_id: str, part: str) -> None:
+        """Put a claimed unit back — the job it was reserved for never happened.
+
+        Only for a dispatch that is abandoned before anyone drives anywhere (a stale
+        epoch, a cancelled work order). A *completed* repair does not come back through
+        here: that part was fitted to a machine and is gone. See ``_replenish``.
+        """
+        wh = self.warehouses.get(warehouse_id)
+        if wh is None or not part:
+            return
+        wh.stock[part] = wh.stock.get(part, 0) + 1
+        self.publish_warehouses()
+
+    def _replenish(self, wo: WorkOrder) -> None:
+        """Restock the part a finished job consumed.
+
+        Physically the component is now bolted into a machine, so "restock" is the
+        resupply that follows rather than the part coming back. Modelled as immediate
+        because the alternative on a demo that runs for an hour is a depot that drains
+        to nothing and a dispatcher that then has nothing to reason about — the
+        interesting behaviour is the routing and the shortfall, not the lead time on a
+        purchase order. A pilot would replace this with a real reorder cycle, and the
+        reorder points in ``seed.PART_REORDER_AT`` are already the hook for it.
+        """
+        if not wo.warehouse_id:
+            return
+        wh = self.warehouses.get(wo.warehouse_id)
+        if wh is None:
+            return
+        for part in wo.parts or ([wo.part] if wo.part else []):
+            wh.stock[part] = wh.stock.get(part, 0) + 1
+        self.publish_warehouses()
+
+    def publish_warehouses(self) -> None:
+        bus.publish(
+            WsEvent(
+                type="warehouses",
+                payload={"warehouses": [w.model_dump(mode="json") for w in self.warehouses.values()]},
+            )
+        )
+
     def add_work_order(self, wo: WorkOrder) -> bool:
         """Put a dispatch on the board. False means it was refused as stale.
 
@@ -297,12 +389,65 @@ class Store:
         if wo.status == "completed":
             return
         wo.status = "completed"
+        # The part went into the machine; the depot books a replacement in.
+        self._replenish(wo)
+        # A visit that serviced the machine restarts its service clock — including a
+        # corrective or predictive visit that bundled the service in. Without this the
+        # machine stays on the overdue board after the very trip that cleared it, and
+        # an operator schedules the same work twice.
+        if wo.maintenance_type == "preventive" or wo.bundled_service:
+            asset_serviced = self.assets.get(wo.asset_id)
+            if asset_serviced is not None:
+                asset_serviced.hours_since_service = 0.0
         if wo.technician_id:
             tech = self.technicians.get(wo.technician_id)
             if tech:
                 tech.available = True
                 self.publish_technicians()
         # Repaired: the heartbeat resumes.
+        simulator.clear(wo.asset_id)
+        asset = self.assets.get(wo.asset_id)
+        if asset and asset.state in ("dispatched", "silent", "anomaly"):
+            self.set_asset_state(wo.asset_id, "healthy", last_seen=utcnow())
+        bus.publish(WsEvent(type="work_order", payload=wo.model_dump(mode="json")))
+
+    def close_no_fault_found(self, wo: WorkOrder) -> None:
+        """The technician attended, found nothing to repair, and came back.
+
+        A prediction can be wrong. When it is, the visit still happened and the truck
+        still rolled, but nothing was fitted — so this is not a completed repair and
+        must not be recorded as one. Three things follow, and they are the reason this
+        is a separate path rather than a flag on ``complete_work_order``:
+
+        * **The parts go back on the shelf, not through resupply.** A completed repair
+          consumes its part and the depot books a replacement in (``_replenish``); an
+          unfitted part is still an unfitted part and returns to the depot it was
+          collected from, at the same count. Running it through the completion path
+          would quietly conjure a spare component out of a wasted journey.
+        * **The machine returns to service healthy**, because it always was.
+        * **It is counted.** ``no_fault_found`` sits next to ``false_dispatches_avoided``
+          on the dashboard on purpose. A product whose pitch is "we stop you driving to
+          machines that are fine" has no business hiding it when it does exactly that.
+
+        The incident is deliberately left as the agent closed it. Rewriting it to say
+        no fault would erase what the system actually concluded and make the trace
+        disagree with the record it produced. The work order carries the correction.
+        """
+        from .simulator import simulator
+
+        if wo.status == "completed":
+            return
+        wo.status = "completed"
+        wo.no_fault_found = True
+        # Back to the depot it came from, uncounted against stock.
+        for part in wo.parts or ([wo.part] if wo.part else []):
+            self.release_part(wo.warehouse_id, part)
+        if wo.technician_id:
+            tech = self.technicians.get(wo.technician_id)
+            if tech:
+                tech.available = True
+                self.publish_technicians()
+        self.no_fault_found += 1
         simulator.clear(wo.asset_id)
         asset = self.assets.get(wo.asset_id)
         if asset and asset.state in ("dispatched", "silent", "anomaly"):
@@ -320,6 +465,10 @@ class Store:
 
         self.work_orders.pop(wo.id, None)
         if wo.status != "completed":
+            # Nobody fitted them, so they go back on the shelf rather than being
+            # written off — the mirror of releasing the technician immediately below.
+            for part in wo.parts or ([wo.part] if wo.part else []):
+                self.release_part(wo.warehouse_id, part)
             if wo.technician_id:
                 tech = self.technicians.get(wo.technician_id)
                 if tech:
@@ -352,6 +501,14 @@ class Store:
         now = utcnow()
         for wo in list(self.work_orders.values()):
             if wo.status == "completed":
+                continue
+            # Nobody is driving to this one — it is waiting on a free technician or on
+            # a part no depot holds. Completing it on a timer would mark a machine
+            # repaired that no one has visited, free a technician who was never
+            # assigned, and return the asset to service still broken. The waiting job
+            # is picked up by the re-investigation sweep instead, which is the path
+            # that actually assigns somebody.
+            if wo.technician_id is None:
                 continue
             if (now - wo.created_at).total_seconds() < after:
                 continue
@@ -413,6 +570,7 @@ class Store:
             false_dispatches_avoided=self.false_dispatches_avoided,
             incidents_prevented=self.incidents_prevented,
             dispatches_issued=self.dispatches_issued,
+            no_fault_found=self.no_fault_found,
             avg_triage_seconds=round(avg_triage, 1),
         )
 
@@ -455,6 +613,7 @@ class Store:
         return {
             "assets": [a.model_dump(mode="json") for a in self.assets.values()],
             "technicians": [t.model_dump(mode="json") for t in self.technicians.values()],
+            "warehouses": [w.model_dump(mode="json") for w in self.warehouses.values()],
             "incidents": [i.model_dump(mode="json") for i in self.incidents.values()],
             "trace": {k: [s.model_dump(mode="json") for s in v] for k, v in self.trace.items()},
             "work_orders": [w.model_dump(mode="json") for w in self.work_orders.values()],

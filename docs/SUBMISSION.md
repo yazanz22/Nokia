@@ -53,18 +53,23 @@ The moment a heartbeat stops, the agent opens an incident and investigates on it
    roaming view reveals it, and the correct response is a connectivity ticket.
 4. Five outcomes follow, and three of them send nobody: coverage gap, roamed out,
    transient dropout. The fourth, a sensor fault, is worth a technician carrying a
-   low-cost telemetry sensor kit; only the fifth, a genuine hardware fault, is worth
-   a mechanic and a spare part. The response is graded to what broke, not switched
-   on and off.
+   low-cost telemetry sensor kit, which rides in the van and needs no depot stop; only
+   the fifth, a genuine hardware fault, is worth a mechanic, a depot call and a spare
+   part. The response is graded to what broke, not switched on and off.
 5. On a genuine fault: a diagnostic model classifies it and a component model names
    the failing part — hydraulic pump, cooling system, main bearing or alternator, at
    88.6% accuracy. CAMARA Location Retrieval then supplies network-verified
    coordinates for a device whose own GPS is dark.
 6. Location Retrieval is called a second time, on the technicians' phones. Their
    handsets are devices on the same network, so the same API answers who is genuinely
-   nearest right now rather than who the roster listed this morning. The work order
-   routes to the nearest technician actually carrying that part — and records, in
-   plain language, when a closer technician was passed over for not carrying it.
+   nearest right now rather than who the roster listed this morning.
+7. The named component is a pallet item, so it lives in one of two parts depots on the
+   site rather than in a van. The journey is technician to depot to machine, and the
+   work order goes to whoever arrives soonest across that whole run, which is regularly
+   not the nearest person. It records who was closer and how many minutes later they
+   would have got there, because on a map a dispatch that drives past somebody nearer
+   looks like a bug. Stock is claimed at the moment of dispatch, so two faults needing
+   the last alternator cannot both be promised it.
 
 It also calls CAMARA Congestion Insights, which is what makes the coverage verdict
 work against a real operator rather than only against our simulation. Device Status
@@ -217,7 +222,8 @@ USING THE DEMO
   2. Pick a different asset and click "Hardware fault".
      Expected: the agent rules out the network, classifies the fault, retrieves
      network-verified coordinates, and raises a work order routed to the nearest
-     technician carrying the right part.
+     technician once the depot holding the part is factored into the journey. The
+     card explains why a closer technician was passed over.
 
   Do not reset between the two. The KPI bar then reads
   "1 false dispatch avoided" alongside "1 dispatch issued" — the same symptom
@@ -237,7 +243,7 @@ DEFAULTS
       NAC_MODE=live      NAC_API_KEY=<key>
 
 TESTS
-  cd backend && .venv/Scripts/python -m pytest -q     # 75 tests, no network needed
+  cd backend && .venv/Scripts/python -m pytest -q     # 240 tests, no network needed
   cd .. && backend/.venv/Scripts/python scripts/scenario_smoke.py   # headless end-to-end
 
   The suite covers the closed loop end to end, the LLM agent path (driven by a

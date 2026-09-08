@@ -140,14 +140,14 @@ The moment a heartbeat stops, the agent opens an incident and runs its own inves
    to what broke: a cheap sensor kit, or a mechanic with the right part.
 4. If it is genuinely hardware, ML identifies the failing component, CAMARA Location
    Retrieval fixes the machine's true position, and the work order routes to the nearest
-   technician actually carrying that part.
+   technician once the depot holding that part is part of the journey.
 No human triage at any stage.
 
 CARD 6 — THE DECISION LOOP (make this a horizontal flow diagram)
 Heartbeat lost → CAMARA Device Reachability → Disambiguate signal / neighbour cells /
 roaming → Verdict → [3 of 5 paths: no dispatch] or [1 path: low-cost sensor kit] or
 [1 path: ML component diagnosis → CAMARA Location Retrieval → work order to nearest
-technician carrying the part]
+technician once the depot stop is counted]
 Caption: Three of the five outcomes end without sending anyone, and the fourth sends a
 sensor kit rather than a mechanic. Grading the response, not just gating it, is the product.
 
@@ -202,7 +202,9 @@ CARD 9 — ARCHITECTURE (make this a layered diagram, top to bottom)
    GPS streamed from every connected asset
 2. AI agent & orchestration — autonomous triage; the agent chooses which tools to call
    and in what order
-3. Network as Code integration — CAMARA Device Reachability Status and Location Retrieval
+3. Network as Code integration — four CAMARA families, five signals: Device Reachability
+   Status, Device Roaming Status, Congestion Insights, Location Retrieval (asset and crew),
+   and Geofencing Subscriptions, which pushes to us
 4. Action & dashboard — work-order generation, technician routing, live operations view
 
 CARD 10 — THE AGENT DECIDES, IT DOES NOT EXECUTE

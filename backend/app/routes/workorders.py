@@ -64,6 +64,31 @@ def complete_work_order(work_order_id: str) -> dict:
     return {"ok": True, "work_order": wo.model_dump(mode="json")}
 
 
+@router.post("/work-orders/{work_order_id}/no-fault-found")
+def close_no_fault_found(work_order_id: str) -> dict:
+    """Close a job the technician attended without finding anything to repair.
+
+    Distinct from completing it and from cancelling it. Completing says the part was
+    fitted; cancelling says nobody went. This says somebody went, the diagnosis was
+    wrong, and the part is coming back to the depot unused.
+    """
+    wo = store.work_orders.get(work_order_id)
+    if wo is None:
+        raise HTTPException(404, f"unknown work order {work_order_id}")
+    if wo.status == "completed":
+        raise HTTPException(409, f"{work_order_id} is already closed")
+    if wo.technician_id is None:
+        raise HTTPException(
+            409,
+            f"{work_order_id} has nobody assigned, so nobody attended it. Cancel it "
+            f"instead: no fault found means a technician made the journey.",
+        )
+    _reject_if_settling(wo, "closing it")
+    store.close_no_fault_found(wo)
+    store.publish_kpis()
+    return {"ok": True, "work_order": wo.model_dump(mode="json")}
+
+
 @router.delete("/work-orders/{work_order_id}")
 def delete_work_order(work_order_id: str) -> dict:
     """Cancel and remove a job, releasing the technician and the machine."""

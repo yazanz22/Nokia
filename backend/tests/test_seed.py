@@ -1,4 +1,7 @@
 from app.seed import (
+    SERVICE_KIT_PART,
+    VAN_STOCK,
+    build_warehouses,
     COMPONENT_PARTS,
     PARTS_CATALOGUE,
     asset_pool,
@@ -29,31 +32,47 @@ def test_demo_fleet_is_deterministic():
     assert [a.id for a in build_demo_fleet(30)] == [a.id for a in build_demo_fleet(30)]
 
 
-def test_technicians_cover_every_part():
-    """Every part the agent can put on a work order has to be on somebody's truck.
+def test_every_part_is_obtainable_somewhere():
+    """Every part the agent can put on a work order has to be reachable on this site.
 
-    ``create_work_order`` filters the crew to whoever carries the required part and,
-    finding nobody, *relaxes the constraint rather than failing to dispatch* — the
-    right call at 3am with one part short, and a silent one. So a part that no
-    technician carries does not break anything visibly: it quietly sends whoever is
-    nearest, empty-handed, to a machine they cannot fix. Nothing else in the suite
-    would notice.
+    Either it rides in the van or a depot stocks it. A part in neither place is one no
+    dispatch can ever satisfy: ``create_work_order`` finds no depot holding it, raises
+    the job ``awaiting_part``, and nobody goes — correct behaviour for a genuine
+    stock-out, and completely wrong as a permanent property of the catalogue. Nothing
+    else in the suite would notice, because an unsatisfiable part looks exactly like an
+    empty shelf.
 
-    The old version named two of the five parts by hand — the hydraulic pump and the
-    sensor kit — so the radiator core, the bearing set and the alternator could all
-    have fallen off the roster with this test still green. Derived from the catalogues
-    now, so a part added to either one is covered the day it is added.
+    Derived from the catalogues rather than naming parts by hand, so a part added to
+    either one is covered the day it is added.
     """
     required = {part for part, _ in COMPONENT_PARTS.values()}
     # The fallback kits, minus the two modes that dispatch nobody and so name no part.
     required |= {part for part, _ in PARTS_CATALOGUE.values() if part}
+    required.add(SERVICE_KIT_PART)
     # Deriving the expectation is only an improvement while the derivation finds
     # something: an emptied catalogue would make the subset check below vacuously true
     # and put the test straight back where it started.
     assert len(required) >= 5, f"catalogue shrank to {sorted(required)}"
 
-    carried = {p for t in build_technicians() for p in t.parts_on_hand}
-    assert not (required - carried), (
-        f"no technician carries {sorted(required - carried)} — a work order naming one "
-        "would be handed to whoever is nearest without it"
+    obtainable = set(VAN_STOCK)
+    for wh in build_warehouses():
+        obtainable |= {p for p, units in wh.stock.items() if units > 0}
+    assert not (required - obtainable), (
+        f"nothing on this site can supply {sorted(required - obtainable)} — a work order "
+        "naming one would be raised awaiting_part forever"
     )
+
+
+def test_a_forward_depot_is_allowed_to_be_incomplete():
+    """The routing is only interesting because the depots differ.
+
+    If every depot stocked every part, the pickup would add a constant to every
+    journey, never re-order the crew, and the two-leg routing would be theatre. This
+    pins the asymmetry that makes it real — and would fail if somebody "fixed" the
+    Trojena depot by giving it one of everything.
+    """
+    depots = build_warehouses()
+    assert len(depots) >= 2
+    stocked = [set(w.stock) for w in depots]
+    assert stocked[0] != stocked[1], "the depots hold identical catalogues"
+    assert any(s < set().union(*stocked) for s in stocked), "no depot is a forward store"

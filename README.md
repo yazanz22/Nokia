@@ -90,10 +90,11 @@ ordinary event on that site.
 
 Three of the five outcomes send nobody: a coverage gap, a machine roaming onto a foreign
 operator, and a silence the fault model reads as a transient dropout with nothing wrong.
-The fourth sends a technician with a cheap `TELEMETRY-SENSOR-KIT` rather than a mechanic,
-and only the fifth — a confirmed hardware fault — is worth a truck and the
-component-specific spare part. Grading the response to what actually broke, not just
-gating dispatch on and off, is the product.
+The fourth sends a technician with a cheap `TELEMETRY-SENSOR-KIT` — which rides in the
+van, so that trip collects nothing and goes straight there — and only the fifth, a
+confirmed hardware fault, is worth a truck, a depot stop and the component-specific spare
+part. Grading the response to what actually broke, not just gating dispatch on and off,
+is the product.
 
 ### Why Congestion Insights is load-bearing, not a fourth logo
 
@@ -136,6 +137,32 @@ and *who is genuinely nearest to it*. Crews drive between jobs, so a rostered or
 last-known position is stale exactly when it matters — dispatching on one is how you send
 the second-nearest person. The agent asks instead, and the work order records whether the
 assignment was made against a network-verified position.
+
+### Nearest is not soonest, because the part is in a depot
+
+The components this system names are pallet items: a 40 L/min hydraulic pump and an XL
+radiator core are forklift loads, not something six technicians each keep a spare of in a
+pickup. They live in **two parts depots** on the site, and only the telemetry sensor kit
+and the service consumables ride in the van.
+
+That changes what a dispatch is. The journey is **technician → depot → load → machine**,
+so the person who arrives first is the one with the shortest *combined* run, which is
+routinely not the one standing nearest the machine. On the demo's hardware scenario the
+nearest technician is 19.1 km away and would arrive **44 minutes later** than the one who
+is sent, because he would have to collect the alternator first. The work order says so on
+its face, because on a map a dispatch that drives past a closer person looks like a bug.
+
+The depots are deliberately unequal. Trojena Ridge is a forward store that holds no
+alternator at all, so an alternator failure there cannot be served by the depot next door
+and the routing has to reason about it. Stock every depot with one of everything and the
+pickup becomes a constant added to every journey that never re-orders anybody, which is
+routing as theatre.
+
+Stock is claimed atomically at the moment of dispatch, the same way a technician is: two
+investigations needing the last alternator would otherwise both be promised it, and the
+second technician would find the empty shelf only after driving to the depot. When no
+depot on site holds the part, the job is raised `awaiting_part` and nobody is sent, which
+is a different problem from `awaiting_crew` and is recorded as one.
 
 ### It learns the site
 
@@ -229,8 +256,8 @@ moves for the alternator. A threshold returns a yes or a no, so no threshold on 
 channel returns a *component* — this is the one step in the pipeline with no rule-shaped
 alternative at all. A classifier over the
 trailing window identifies the component at **88.6% accuracy (0.872 macro F1)**, and the
-part on the work order follows from it — which is also why the nearest technician is
-often not the right one. On synthetic data the AUC is
+part on the work order follows from it — which is also what decides which depot the
+technician has to call at, and therefore who can get there first. On synthetic data the AUC is
 ~1.0, which is why we don't quote it; the warning-time gap is the claim, and it follows from the
 physics being modelled rather than the classifier being clever.
 
@@ -247,7 +274,9 @@ physics being modelled rather than the classifier being clever.
 | **Network as Code adapter** | Four CAMARA families — Device Status (reachability + roaming), Congestion Insights, Location Retrieval, Geofencing Subscriptions; live sandbox **or** dataset-backed mock, with mock-on-error fallback | `backend/app/nac/` |
 | **Diagnosis** | 4-class "what broke?" — an auditable rule, with `ml/model.pkl` trained as a check on it (they agree on 100% of 15,000 rows) | `backend/app/ml/client.py` |
 | **ML — prognosis** | Multi-horizon failure forecasting + component identification — the two questions no rule answers (`ml/forecast_model.pkl`, `ml/component_model.pkl`) | `backend/app/ml/forecast.py` |
-| **Operator dashboard** | Fleet map, KPIs, incident feed, live agent trace, work orders, scenario control | `frontend/` |
+| **Parts depots** | Two stocked depots; dispatch routes technician → depot → machine and claims stock atomically | `backend/app/seed.py`, `backend/app/store.py` |
+| **Scheduled maintenance** | Service intervals per machine, a due board, and the bundling case where a forecast failure and a due service become one visit | `backend/app/maintenance.py` |
+| **Operator dashboard** | Six tabs: fleet map and KPIs, assets, maintenance, incidents with the full agent trace, depot inventory, and a quarantined simulation tab | `frontend/` |
 
 ### AI agent layer — Resource & Tooling Guide compliant
 

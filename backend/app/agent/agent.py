@@ -26,10 +26,13 @@ from .tools import (
     assess_silence,
     check_device_status,
     create_work_order,
+    dispatch_observation,
+    dispatch_thought,
     get_device_location,
     park_awaiting_crew,
     predict_fault,
     queued_observation,
+    unassigned_thought,
     notify_operator,
     schedule_recheck,
 )
@@ -471,36 +474,28 @@ def _build_agent():
             # what it is finished *as* is "queued, nobody sent", not a dispatch.
             if wo.technician_id is None:
                 await d.tracer.step(
-                    "The job is ready but every technician on the crew is already out on one. I "
-                    "am not going to record a dispatch that is not happening: the work order is "
-                    "queued unassigned, and the machine stays on the sweep so it is picked up "
-                    "the moment somebody frees.",
+                    unassigned_thought(wo),
                     tool="ops.create_work_order",
-                    args={"incident_id": d.incident_id, "part": wo.part, "status": "queued"},
+                    args={"incident_id": d.incident_id, "part": wo.part, "status": wo.status},
                     observation=queued_observation(wo),
                 )
                 park_awaiting_crew(d.incident_id, d.asset_id, wo, fault)  # type: ignore[arg-type]
-                d.terminal = "queued — awaiting a free technician"
+                blocked_on = "the part" if wo.status == "awaiting_part" else "a free technician"
+                d.terminal = f"raised unassigned — awaiting {blocked_on}"
                 return (
-                    f"{wo.id} queued: the fault is confirmed but the whole crew is on jobs, "
-                    "so nobody was dispatched"
+                    f"{wo.id} raised but unassigned: the fault is confirmed and the blocker is "
+                    f"{blocked_on}, so nobody was dispatched"
                 )
 
             await d.tracer.step(
-                "Generated work order and assigned the nearest technician who is actually carrying "
-            "the part. Closest is not the same as soonest fixed.",
+                dispatch_thought(wo),
                 tool="ops.create_work_order",
-                args={"incident_id": d.incident_id, "part": wo.part},
-                observation=(
-                    f"{wo.id} -> {wo.technician_name or 'unassigned'} "
-                    f"({wo.distance_km:.1f} km, ETA {wo.eta_minutes} min)"
-                    + (
-                        f". {wo.nearest_skipped_name} is nearer at {wo.nearest_skipped_km:.1f} km but "
-                        f"is not carrying a {wo.part}."
-                        if wo.nearest_skipped_name
-                        else ""
-                    )
-                ),
+                args={
+                    "incident_id": d.incident_id,
+                    "part": wo.part,
+                    "warehouse": wo.warehouse_id or None,
+                },
+                observation=dispatch_observation(wo),
             )
             inc = store.incidents[d.incident_id]
             store.set_asset_state(d.asset_id, "dispatched")

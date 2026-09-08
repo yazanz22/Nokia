@@ -116,7 +116,7 @@ live-check panel.
 │ AS CODE          │  │              │  │                    │
 │ Reachability     │  │ diagnose:    │  │ work order,        │
 │ Status v1        │  │  what broke  │  │ nearest technician │
-│ Roaming v0       │  │ forecast:    │  │ carrying the part, │
+│ Roaming v0       │  │ forecast:    │  │ routed via the     │
 │ Congestion       │  │  what will   │  │ ETA, routing,      │
 │ Insights v0      │  │              │  │ perimeter alerts   │
 │ Location         │  │              │  │                    │
@@ -173,6 +173,45 @@ switched on and off:
 
 The first three are counted as false dispatches avoided; the last two go through CAMARA
 Location Retrieval — once for the asset, once for the crew — before a work order exists.
+
+### Who actually goes, once the part is in a depot
+
+The four named components are pallet items and live in two depots (`seed.py::build_warehouses`);
+only the sensor kit and the service consumables ride in the van. So a dispatch is a
+two-leg journey — technician → depot → load → machine — and `agent/tools.py::_route_options`
+ranks every (technician, depot) pair by arrival time rather than by distance to the
+machine. The nearest technician is frequently not the fastest, and the work order records
+who was nearer and how many minutes later they would have arrived, because otherwise the
+assignment looks arbitrary on a map.
+
+Two constraints keep it honest:
+
+- **Stock is claimed, not assumed.** `store.claim_part` is the same synchronous
+  test-and-set as `claim_technician`, for the same reason and with a worse failure mode:
+  two investigations needing the last alternator would both be promised it, and the second
+  technician would discover the empty shelf only after making the journey.
+- **A part nobody stocks is its own outcome.** The job is raised `awaiting_part` rather
+  than `queued`. A missing crew is a scheduling problem; a missing part is a purchasing
+  one, and telling an operator the wrong one sends them to argue with the wrong person.
+
+The depots are deliberately unequal — Trojena Ridge carries no alternator — because a site
+where every depot stocks everything makes the pickup a constant that never changes who
+goes.
+
+### When the diagnosis is wrong
+
+A prediction can be wrong, and this system exists to reduce exactly the trip where a
+technician arrives and finds nothing to repair. So that outcome is expressible rather than
+hidden: `store.close_no_fault_found` returns the component **to the shelf it came from,
+unfitted**, frees the crew, returns the machine to service, and counts the journey on the
+dashboard beside the dispatches it avoided.
+
+It is a separate path from completing the job for a concrete reason. A completed repair
+consumes its part and the depot books a replacement in; running an unfitted part through
+that path would conjure a spare component out of a wasted trip and drift stock upward
+every time the model was wrong. The incident is deliberately left as the agent closed it —
+rewriting it would erase what the system actually concluded and make the trace disagree
+with its own record.
 
 The agent also remembers. Each resolution is recorded against the machine and the ~2 km
 map cell it happened in (`agent/memory.py`, `CELL = 0.02°`), so a patch of ground that

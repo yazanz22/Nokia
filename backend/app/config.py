@@ -80,6 +80,18 @@ class Settings(BaseSettings):
     # clock (see agent/tools.py::RECHECK_NOMINAL_MINUTES). The trace prints whatever
     # this produces, so the promise on screen is always the promise that gets kept.
     recheck_after_seconds: int = 45
+    # Time on the ground at a parts depot: locating the item, booking it out of stock,
+    # and loading it — a hydraulic pump or a radiator core is a forklift job, not
+    # something picked off a shelf by hand.
+    #
+    # OURS, not sourced, and worth saying so. Field-service literature treats waiting
+    # for parts as a headline category of non-wrench time but does not put a figure on
+    # the pickup itself; the nearest published number we found concerns travel to a
+    # distant storeroom ("30 minutes or more per job"), which this model already
+    # accounts for geographically as the first leg. So 20 minutes is our assumption,
+    # set here rather than buried in the routing so it is arguable and tunable —
+    # exactly how docs/EVIDENCE.md treats every other figure that is ours.
+    warehouse_loading_minutes: int = 20
     # "Now" for the predictive-maintenance view: telemetry history is replayed up to
     # this instant, so the fleet shows a mix of healthy and mid-degradation machines
     # rather than only ones that have already died.

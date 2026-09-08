@@ -16,7 +16,7 @@ import pytest
 
 from app.agent import run_investigation
 from app.agent.tools import create_work_order
-from app.models import FaultPrediction, utcnow
+from app.models import FaultPrediction, Warehouse, utcnow
 from app.nac.base import DeviceLocation
 from app.simulator import simulator
 from app.store import store
@@ -74,6 +74,12 @@ async def test_concurrent_work_orders_claim_distinct_technicians():
                          accuracy_m=50.0, as_of=utcnow(), source="mock")
 
     crew = len(store.technicians)
+    # Put enough pumps on one shelf that stock cannot be the limiting resource. This
+    # test is about the *crew* claim; the stock claim has its own test below, and
+    # leaving the two entangled meant this one failed for the right reason about the
+    # wrong thing.
+    next(iter(store.warehouses.values())).stock["HYD-PUMP-40L"] = crew + 2
+
     orders = await asyncio.gather(
         *(create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc) for i in range(crew))
     )
@@ -84,3 +90,44 @@ async def test_concurrent_work_orders_claim_distinct_technicians():
         f"{crew} concurrent dispatches shared {len(set(assigned))} technicians between them"
     )
     assert all(not t.available for t in store.technicians.values())
+
+
+@pytest.mark.asyncio
+async def test_concurrent_work_orders_never_over_commit_one_shelf():
+    """The same race on the other scarce resource: stock.
+
+    A depot holding two pumps can serve two dispatches, and the third has to be told
+    so. The failure this guards is worse than the technician one because it is
+    invisible until somebody arrives: three work orders would each promise a pump, two
+    technicians would find one, and the third would have driven to a depot for nothing.
+
+    The orders that miss out must come back ``awaiting_part`` — not ``queued``, which
+    would send an operator looking for a free technician when the crew is fine and the
+    shelf is empty.
+    """
+    fault = FaultPrediction(
+        asset_id="EQ-0001", mode="DEVICE_FAILURE", confidence=0.9,
+        recommended_part="HYD-PUMP-40L",
+    )
+    loc = DeviceLocation(asset_id="EQ-0001", latitude=27.5, longitude=35.0,
+                         accuracy_m=50.0, as_of=utcnow(), source="mock")
+
+    # One depot, two pumps, four simultaneous faults needing one each.
+    store.warehouses.clear()
+    store.warehouses["WH-T"] = Warehouse(
+        id="WH-T", name="Test Depot", latitude=27.5, longitude=35.0,
+        stock={"HYD-PUMP-40L": 2},
+    )
+
+    orders = await asyncio.gather(
+        *(create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc) for i in range(4))
+    )
+
+    assigned = [wo for wo in orders if wo.technician_id]
+    blocked = [wo for wo in orders if wo.technician_id is None]
+    assert len(assigned) == 2, f"two pumps produced {len(assigned)} dispatches"
+    assert store.warehouses["WH-T"].stock["HYD-PUMP-40L"] == 0
+    assert all(wo.status == "awaiting_part" for wo in blocked), (
+        f"blocked orders reported {[wo.status for wo in blocked]} — a part shortfall "
+        "must not be reported as a crew shortfall"
+    )

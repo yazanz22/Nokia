@@ -221,18 +221,29 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 > phones. Because their phones are devices on the same network. So 'who is nearest' is answered by the
 > network, right now, not by a roster written this morning."
 
-**Driver:** point at the **"nearest technician isn't carrying the part"** line on the card.
+**Driver:** point at the **route line** on the work-order card — the three legs — then at the
+**"nearer but later"** note beneath it.
 
-> "And look at this. Ziad Khalifeh is **≈19 km** away. Lina Karam is **≈20 km** — further. It sent
-> Lina. Why? Because Ziad isn't carrying an alternator.
+> "An alternator is a pallet item. It is not in anybody's van, it is on a shelf at a depot — so the
+> job isn't 'who is closest', it's 'who can pick one up and still get there first'.
 >
-> A closer technician who can't fix it isn't a better answer — it's a second trip. Twenty-five percent
-> of field service calls need one. This is how you don't make that mistake."
+> Look at what it worked out. Ziad Khalifeh is **≈19 km** from the machine, the nearest man we have.
+> It sent Youssef Nasser instead, and the card says why: Ziad would arrive **≈44 minutes later**,
+> because the only depot holding an alternator is the other way.
+>
+> Closer is not sooner once the part is somewhere else. On a map that dispatch looks like a bug, so
+> the card explains itself in the same breath."
 
 *(≈28 s from dark to dispatched)*
 
-> "Under thirty seconds, from telemetry going dark to the right technician routed with the right part.
-> No human in the loop at any point."
+> "Under thirty seconds, from telemetry going dark to the right technician, routed through the depot
+> that actually has the part. No human in the loop at any point."
+
+> **Read the card, not these numbers.** The two distances and the minutes-later figure are computed
+> from where the crew happen to be standing when you fire it, and the crew drift between jobs. The
+> shape is what is fixed: the nearest technician is not the one sent, and the card gives the reason
+> in minutes. On the current fleet it has been **Ziad nearest at ≈19 km, Youssef sent, ≈44 minutes
+> later** on every rehearsal run.
 
 **Driver (optional):** click **Mark complete** on the card.
 
@@ -506,10 +517,25 @@ invisible without battery voltage, which is why that channel is in there. The co
 selects the part, and the part is what selects the technician.
 
 **"Why did it skip the nearest technician?"**
-Because they weren't carrying the part. The card says so explicitly — *"X is nearer at Y km but is
-not carrying Z"* — and that's deliberate: on a map, dispatching past a closer person looks like a
-bug. 25% of field service calls need a second visit (Aberdeen). Sending the nearest person without
-the part is how you become that statistic.
+Because nearest and soonest stopped being the same question once the parts moved into depots. The
+four components we name are pallet items — a 40 L/min pump, an XL radiator core — so they sit on a
+depot shelf, not in six vans. The journey is technician to depot to machine, and the agent ranks
+every technician-and-depot pairing by arrival time. The card states it outright: *"X is nearer the
+machine at Y km, but would arrive Z minutes later once the part is collected."*
+
+Worth adding if they press: this is also why the depots are deliberately unequal. Trojena holds no
+alternator, so an alternator failure there has to be served from the coast. Give every depot one of
+everything and the pickup becomes a constant added to everybody's journey that never changes who
+goes — routing theatre. 25% of field service calls need a second visit (Aberdeen); sending somebody
+who has to go back for the part is how you become that statistic.
+
+**"What if you're wrong and there's nothing to fix?"**
+Then the trip is recorded as what it was. The technician closes it **no fault found**, the component
+goes back on the shelf it came from unfitted, the crew and the machine return to service, and the
+dashboard counts it next to the dispatches we avoided. It is a separate action from completing the
+job on purpose: a completed repair consumes its part and the depot books a replacement in, so
+closing a no-fault visit that way would invent a spare out of a wasted journey and drift stock upward
+every time the model was wrong. A product sold on cutting wasted trips should show its own.
 
 **"Where did the training data come from?"**
 Synthetic, and we'll show you the generators. `data/dataset_builder.py` makes the 15,000 diagnostic

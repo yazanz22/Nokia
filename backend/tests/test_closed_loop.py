@@ -41,11 +41,21 @@ async def test_hardware_dispatches_with_part_and_technician():
     # ramp, the named component chooses it. Where it does not, no component is named —
     # the component model has no "nothing is wrong" class and will otherwise invent one
     # at 99% confidence — and the part falls back to the fault mode's default kit.
-    # Either way the assigned technician has to be carrying whatever is on the order.
-    from app.seed import COMPONENT_PARTS
+    from app.seed import COMPONENT_PARTS, VAN_STOCK
 
     assert wo.part
-    assert wo.part in store.technicians[wo.technician_id].parts_on_hand
+    # Whatever is on the order has to have come from somewhere real. A component is a
+    # depot item, so the order names the depot it was collected from and the journey
+    # has two legs; van stock is collected from nobody and runs direct. An order with
+    # a component on it and no depot behind it is a technician sent empty-handed.
+    if wo.part in VAN_STOCK:
+        assert wo.warehouse_id == ""
+        assert wo.loading_minutes == 0
+    else:
+        assert wo.warehouse_id, f"{wo.part} is a depot item but no depot is recorded"
+        assert wo.leg_to_warehouse_km >= 0 and wo.leg_to_asset_km > 0
+        assert wo.loading_minutes > 0
+        assert wo.eta_minutes > wo.loading_minutes
     if wo.component:
         assert wo.component in COMPONENT_PARTS
         assert wo.part == COMPONENT_PARTS[wo.component][0]
@@ -215,6 +225,11 @@ async def test_technicians_return_to_the_pool():
     loc = DeviceLocation(asset_id="EQ-0001", latitude=27.5, longitude=35.0, accuracy_m=50.0,
                          as_of=utcnow(), source="mock")
 
+    # Enough pumps that the crew, not the shelf, is what runs out. This test is about
+    # technicians returning to the pool; with default stock the depots hold three pumps
+    # and the last three orders would correctly come back awaiting_part instead.
+    next(iter(store.warehouses.values())).stock["HYD-PUMP-40L"] = 99
+
     for i in range(len(store.technicians)):
         await create_work_order(f"INC-{i}", f"EQ-{i:04d}", fault, loc)
     assert all(not t.available for t in store.technicians.values())
@@ -259,15 +274,18 @@ async def test_dispatch_explains_skipping_a_nearer_technician():
     asset_id, inc = await _investigate("hardware")
     wo = [w for w in store.work_orders.values() if w.incident_id == inc.id][0]
     assert wo.part
-    assigned = store.technicians[wo.technician_id]
-    assert wo.part in assigned.parts_on_hand
+    assert wo.technician_id is not None
 
-    # If anyone nearer was skipped, it can only have been for the part.
+    # If anyone nearer was skipped, the record has to justify it in the unit that
+    # decided it. Distance alone no longer explains anything: since the components
+    # moved into depots, the person nearest the machine and the person who reaches it
+    # first are routinely different people, and the difference is time.
     if wo.nearest_skipped_name:
-        skipped = next(t for t in store.technicians.values()
-                       if t.name == wo.nearest_skipped_name)
-        assert wo.part not in skipped.parts_on_hand
-        assert wo.nearest_skipped_km < wo.distance_km
+        assert any(
+            t.name == wo.nearest_skipped_name for t in store.technicians.values()
+        ), "the skipped technician has to be somebody on the crew"
+        assert wo.nearest_skipped_km < round(wo.leg_to_asset_km, 1)
+        assert wo.nearest_skipped_minutes_later > 0
 
 
 @pytest.mark.asyncio

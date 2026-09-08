@@ -68,11 +68,21 @@ def test_component_parts_is_the_training_side_dict():
     assert list(FEATURES.COMPONENT_CLASSES) == list(seed.COMPONENT_PARTS)
 
 
-def test_every_component_part_is_carried_by_someone():
-    """The mapping is only worth having if the crew can actually satisfy it."""
-    carried = {p for t in seed.build_technicians() for p in t.parts_on_hand}
+def test_every_component_part_is_obtainable_on_site():
+    """The mapping is only worth having if a dispatch can actually satisfy it.
+
+    Components live on depot shelves now rather than in vans, so the question moved
+    from "does anyone carry it" to "can anyone collect it".
+    """
+    stocked = {
+        p
+        for wh in seed.build_warehouses()
+        for p, units in wh.stock.items()
+        if units > 0
+    }
+    stocked |= set(seed.VAN_STOCK)
     for component, (part, lead_days) in seed.COMPONENT_PARTS.items():
-        assert part in carried, f"nobody carries {part} for {component}"
+        assert part in stocked, f"no depot stocks {part} for {component}"
         assert lead_days >= 0
 
 
