@@ -1,7 +1,27 @@
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# ── an inert key, so building the agent does not need a real one ────────────
+#
+# test_llm_agent.py drives the agent with Pydantic AI's FunctionModel and wraps
+# every run in `models.override_allow_model_requests(False)`, so no request can
+# leave the process. Its docstring says as much: these run "without a network
+# call, an API key or a token of quota".
+#
+# That was not quite true. `Agent("groq:...")` builds the Groq provider eagerly,
+# and the provider raises UserError at construction time when GROQ_API_KEY is
+# unset — before `agent.override(model=FunctionModel(...))` ever gets to replace
+# the model. So the tests passed only on a machine that happened to have a real
+# key in its .env, and failed everywhere else. That is exactly what CI is: the
+# workflow deliberately has no secrets, and this was the first time it ran.
+#
+# setdefault, so a developer with a real key keeps it and nothing here can
+# overwrite one. The value is never sent anywhere: the kill-switch is what
+# guarantees that, and it stays the guarantee.
+os.environ.setdefault("GROQ_API_KEY", "test-key-not-used")
 
 import pytest  # noqa: E402
 
