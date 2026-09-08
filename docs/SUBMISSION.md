@@ -118,7 +118,7 @@ https://nokia-rhhp.onrender.com/
 ```
 
 Live single-service deployment on Render — FastAPI serving the built dashboard, one
-container behind one URL. Verified working 2026-09-04: trained ML models loaded, all
+container behind one URL: trained ML models loaded, all
 five scenario outcomes reproduce, and the "Run live CAMARA check" panel returns real
 Nokia sandbox data across all four CAMARA families (Device Status — both reachability
 and roaming — plus Congestion Insights, Location Retrieval, and a Geofencing
