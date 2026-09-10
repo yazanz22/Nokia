@@ -13,7 +13,7 @@ import logging
 import mimetypes
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -326,15 +326,36 @@ mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("image/png", ".png")
 
 _DIST = REPO_ROOT / "frontend" / "dist"
 
 if _DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
 
+    # Everything Vite copies from public/ lands in the dist ROOT, not in assets/ —
+    # the favicons and the brand mark. Only /assets was mounted, so under the
+    # single-service build (the one that deploys) every one of them 404'd and the
+    # header rendered a broken-image glyph. Enumerated once at startup rather than
+    # joining a URL segment onto a directory per request, which is a path traversal
+    # waiting to be written; nothing here is dynamic, so there is nothing to gain
+    # from resolving it late. The single-segment path parameter cannot match a
+    # slash, and /api, /ws and /assets are all registered above this, so it sees
+    # only what they have already declined.
+    _ROOT_FILES = {
+        f.name: f for f in _DIST.iterdir() if f.is_file() and f.name != "index.html"
+    }
+
     @app.get("/", include_in_schema=False)
     def _index() -> FileResponse:
         return FileResponse(_DIST / "index.html")
+
+    @app.get("/{filename}", include_in_schema=False)
+    def _root_file(filename: str) -> FileResponse:
+        path = _ROOT_FILES.get(filename)
+        if path is None:
+            raise HTTPException(404, "not found")
+        return FileResponse(path)
 
     log.info("serving dashboard from %s", _DIST)
 else:

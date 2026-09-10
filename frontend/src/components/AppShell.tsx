@@ -81,10 +81,17 @@ export function AppShell({
       </a>
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden>
-            FI
+          {/* Decorative: the name sits beside it in text, so the mark carries no
+              alternative of its own. Dimensions are stated so the header does not
+              reflow when it loads. */}
+          <img className="brand-mark" src="/logo.png" alt="" aria-hidden width="50" height="22" />
+          {/* The company name used to be carried by the "FI" square. The mark that
+              replaced it is a symbol, not a wordmark, so FILO has to be said here or
+              it is not said anywhere on screen. Weighted the way the logo lockup
+              weights it: FILO leads, the product name follows. */}
+          <div className="brand-name">
+            <span className="brand-co">FILO</span> Asset Sentinel
           </div>
-          <div className="brand-name">Asset Sentinel</div>
         </div>
 
         <div className="topbar-spacer" />

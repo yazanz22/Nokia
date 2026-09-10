@@ -36,26 +36,25 @@
   min-width: 0;
 }
 
+/* The mark is 2.27:1, so it is sized by height and left to find its own width -
+   boxed into the old 28px square it would have been letterboxed or squashed. */
 .brand-mark {
-  width: 28px;
-  height: 28px;
+  height: 22px;
+  width: auto;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-control);
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  display: block;
 }
 
 .brand-name {
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.012em;
   white-space: nowrap;
+}
+
+.brand-co {
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .topbar-spacer {

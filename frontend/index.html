@@ -10,6 +10,16 @@
     />
     <title>FILO Asset Sentinel</title>
     <!--
+      Served from public/, so these are copied to the dist root and resolve the same
+      under the dev server and the single-service deployment. PNG rather than SVG:
+      the mark is stripe art, and the small sizes are not straight downscales of the
+      large one - they carry an alpha curve that keeps the eye from washing out when
+      the stripes average against the gaps between them.
+    -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png" />
+    <!--
       Fonts are self-hosted through @fontsource-variable (see src/main.tsx) rather
       than linked from Google Fonts. Two reasons, and the second is the one that
       matters: a demo laptop on venue wifi should not need a third-party request to
