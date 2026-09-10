@@ -1,7 +1,7 @@
 # Gamma AI prompts — FILO Asset Sentinel pitch deck
 
 Gamma's free tier caps a generation at **10 cards**, so the deck is split into two
-generations that get combined by hand: **Deck A (10 cards)** and **Deck B (6 cards)**.
+generations that get combined by hand: **Deck A (10 cards)** and **Deck B (7 cards)**.
 
 Rewritten for **Phase 2 judging**. The previous version was a technical deck with no market
 case at all; this one carries the commercial argument the supervisor review asked for
@@ -13,11 +13,11 @@ The previous version is in git history if a card needs to be pulled back.
 
 1. In Gamma: **Create new → Paste in text**, paste **Prompt A**, set card count to **10**, generate.
 2. **Note the theme Gamma applied** (the theme name is in the editor's side panel).
-3. New generation: **Paste in text**, paste **Prompt B**, set card count to **6**, and — before
+3. New generation: **Paste in text**, paste **Prompt B**, set card count to **7**, and — before
    generating — **pick the same theme by name**. Theme selection is a UI action; no prompt can do
    it for you, and it is the single thing most likely to make the seam visible.
 4. Combine: in Deck A, use **Add card → Import / duplicate from another deck**, or export both to
-   PowerPoint and paste Deck B's six slides after Deck A's ten.
+   PowerPoint and paste Deck B's seven slides after Deck A's ten.
 
 The two style blocks below are **deliberately identical, word for word**. Don't edit one without
 editing the other — that's what keeps the halves looking like one deck.
@@ -39,6 +39,11 @@ editing the other — that's what keeps the halves looking like one deck.
 - Deck B card 3 must keep TAM/SAM/SOM labelled with their sources and must **not** gain a
   revenue projection. Gamma likes to add a hockey-stick "Year 1 / Year 3 / Year 5" row. We
   have no such forecast; anything it adds there is fabricated.
+- **Deck B card 7 is the sources card, and its whole value is that every entry is real.**
+  Check each link against the list in the prompt rather than skimming: a generator that
+  shortens a URL, "tidies" a domain or invents a plausible-looking one has produced a
+  citation to nothing, on the card whose entire purpose is being checkable. Confirm the
+  count too — if fewer entries came out than went in, it has merged some.
 - Deck A cards 6, 7 and 9 must be a diagram, a table and a layered diagram — not three text blocks.
 - Deck A card 8 must name **all three** signals. Gamma likes to compress it back to two
   (reachability + location) and drop roaming — which is the one signal nothing else can see, and
@@ -253,10 +258,10 @@ where it would add risk.
 
 ---
 
-# PROMPT B — cards 11–16
+# PROMPT B — cards 11–17
 
 ```
-You are helping build a pitch deck for a hackathon judging panel. Create a 6-card
+You are helping build a pitch deck for a hackathon judging panel. Create a 7-card
 presentation from the content below.
 
 CRITICAL: these cards are the SECOND HALF of an existing deck and will be appended
@@ -287,7 +292,7 @@ RULES — IMPORTANT
   "target", "illustrative" or "unvalidated" into anything warmer. The honesty is
   deliberate and is part of what is being judged.
 - Do not add any revenue forecast, growth projection or year-by-year table. None exists.
-- Produce exactly 6 cards, one per CARD block below. Do not merge or split them.
+- Produce exactly 7 cards, one per CARD block below. Do not merge or split them.
 - Card 1 must be a metrics card — three model results as prominent stat callouts.
 - Card 3 must be a funnel or tiered diagram (TAM → SAM → SOM).
 - Add speaker notes to each card expanding on the argument for a live pitch.
@@ -400,4 +405,53 @@ The ask: one pilot, at one NEOM division or one Port of NEOM terminal, to replac
 assumptions with their numbers.
 Closing line, displayed prominently: You cannot diagnose a silent machine from the
 machine. So we asked the network.
+
+CARD 7 — SOURCES
+Reference card. Dense, small type, multi-column, no imagery — this one is for reading,
+not for presenting. Group under the headings given and keep every URL exactly as written.
+Title it "Sources" and add a one-line standfirst: "Every figure in this deck, and where
+it came from."
+
+OUR OWN MEASUREMENTS — reproducible from the repository at github.com/yazanz22/Nokia
+- Model results, all horizons, and the diagnostic F1 of 1.00 — ml/metrics.json
+- The vibration-slope counter-argument we volunteer against ourselves — ml/baselines.json
+- The 51/49 hardware/network split in our simulator — data/dataset1.csv
+- Every sourced figure below, with its caveats — docs/EVIDENCE.md
+
+COST OF A WASTED DISPATCH
+- Truck roll $250-$600, up to $1,000; and the 25% second-visit figure, which is Aberdeen
+  Group (2013) quoted there — automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service
+- No-fault-found 17-20% of dispatches — techsee.com/blog/save-millions-lowering-no-fault-found-nff-dispatch-rate/
+  (the vendor's own experience, not a third-party study)
+- Truck rolls per technician per day, 2-5 — smarty.com/articles/truck-roll-costs
+  (worded by its source as an assumption, and describing telecom)
+
+COST OF DOWNTIME
+- $3,200-$8,700 per machine per day — fleetrabbit.com/industry/construction-management-system/real-cost-construction-equipment-downtime
+- Unplanned downtime costs 3-5x planned — forconstructionpros.com/equipment-management/article/21104195/the-true-cost-of-unplanned-equipment-downtime
+- Predictive maintenance cuts costs 18-25% and downtime up to 50% (McKinsey and Deloitte,
+  quoted) — reliamag.com/guides/predictive-maintenance-roi-benchmarks-what-the-studies-show/
+
+THESE ASSETS ARE ON MOBILE NETWORKS
+- 73% of construction and heavy-equipment telematics is cellular — market.us/report/construction-heavy-equipment-telematics-market/
+- NEOM's 5G network, built with stc — blooloop.com/technology/news/neom-stc-cognitive-cities-5g/
+
+MARKET SIZING
+- Global predictive maintenance, $14.6-15.1B — marketresearchfuture.com/reports/predictive-maintenance-market-2377,
+  straitsresearch.com/report/predictive-maintenance-market, precedenceresearch.com/predictive-maintenance-market
+- Smart ports, $4.0B to $39.1B by 2033 — grandviewresearch.com/industry-analysis/smart-port-market
+- Saudi smart cities, $5.1B to $10.9B by 2030 — marketsandmarkets.com/Market-Reports/geography/smart-cities-market/saudi-arabia
+- Maritime and port-equipment predictive maintenance, $1.22B to $2.87B by 2030 — market.us/report/predictive-maintenance-in-maritime-market/
+- Port of NEOM Terminal 1, opening 2026 — neom.com/en-us/our-business/port-of-neom
+- Automated cranes at Port of NEOM — arabnews.jp/en/business/article_148903/
+
+ADJACENT PRODUCTS — characterisations of product category from public materials, not
+benchmarks. We have run no comparison and quote no performance figures for any of them.
+- c3.ai/products/applications/c3-ai-reliability
+- siemens.com/en-us/company/artificial-intelligence/
+- onomondo.com · ookla.com · esri.com
+
+Footer line, set small: Vendor-published figures are labelled as such throughout. Where a
+number originates with a research house we say so, and we say that we found it quoted in
+a vendor write-up rather than in the primary report.
 ```
