@@ -27,9 +27,10 @@ Cards in the previous deck ran from 42 to 364 words — a **7.8× spread** — a
 card to fit its content, so the long ones overflowed and scrolled while the short ones sat
 half empty. Two things fix it, and the first matters far more:
 
-- **The card blocks below are written to an even word budget.** Every one lands between
-  roughly 70 and 110 words, except the sources card, which is a reference list by nature.
-  Keep any edit inside that band. This is the actual lever.
+- **The card blocks below are written to an even word budget.** Every content card lands
+  between 76 and 128 words — a 1.7x spread, against 7.8x before. The title card is
+  naturally shorter and the sources card is a reference list rather than prose; those two
+  aside, keep any edit inside that band. It is the actual lever.
 - In Gamma, set **Card dimensions** to a fixed size (side panel, under the theme) rather than
   letting it auto-fit, and check each card at presentation size before exporting.
 
@@ -141,7 +142,7 @@ exists to remove it.
 
 CARD 3 — WHAT THE GUESS COSTS
 - $250–$600 per truck roll, and up to $1,000. (Automation Anywhere)
-- 17–20% of field-service dispatches find nothing wrong. (TechSee)
+- 17–20% of telecom field-service dispatches find nothing wrong. (TechSee)
 - $3,200–$8,700 per machine per day of unplanned downtime. (FleetRabbit)
 - 25% of service calls need a second visit — the first technician arrived without the
   right part. (Aberdeen Group)
@@ -291,11 +292,11 @@ Two revenue streams:
 - Tiered SaaS subscription per asset per month, scaling with fleet size and site expansion
 - Value-based API premium on automated decision volume — customers pay in proportion to
   the dispatches avoided
-Cost structure: cloud-native and serverless on pay-per-use telecom APIs; infrastructure
-scales with demand, not ahead of it.
-Why it travels: built on GSMA Open Gateway rather than one vendor's telematics stack, the
-same integration works across operators and across markets — ports, factories, oil and
-gas, mining, utilities, logistics. Same unattended plant, same ambiguity, same answer.
+Cloud-native and serverless on pay-per-use telecom APIs: infrastructure scales with
+demand, not ahead of it.
+Why it travels: built on GSMA Open Gateway rather than one vendor's telematics stack, so
+the same integration works across operators and across markets — ports, factories, oil and
+gas, mining, utilities. Same unattended plant, same ambiguity, same answer.
 
 CARD 3 — TEAM FILO AND THE ASK
 Yazan Zarka — Software Engineer. Backend systems and CAMARA API integration.
