@@ -338,7 +338,9 @@ export function MaintenanceTab({
             <span className="panel-note">{corrective.length}</span>
           </div>
           <div className="panel-body stack">
-            {corrective.length === 0 ? (
+            {!state.ready ? (
+              <LoadingRows rows={3} />
+            ) : corrective.length === 0 ? (
               <EmptyState
                 icon={Wrench}
                 title="No corrective work"

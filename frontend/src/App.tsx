@@ -118,6 +118,7 @@ export default function App() {
       }}
       theme={choice}
       onToggleTheme={toggle}
+      feedLost={state.ready && !connected}
     >
       {route.tab === "dashboard" && (
         <DashboardTab

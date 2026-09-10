@@ -1,7 +1,7 @@
 import { memo, useCallback, useId, useMemo, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Asset, DeadZone, Technician, Warehouse, WorkOrder } from "../types";
-import { GROUP_LABEL, minutes, STATE_GROUP, type StateGroup } from "../lib/format";
+import { GROUP_LABEL, minutes, siteLabel, STATE_GROUP, type StateGroup } from "../lib/format";
 
 // The operational site perimeter. SOURCE OF TRUTH: backend/app/nac/base.py
 // (SITE_CENTER / SITE_RADIUS_KM). These are copies, deliberately: a browser cannot
@@ -29,6 +29,70 @@ const GROUP_COLOR: Record<StateGroup, string> = {
 };
 
 const LEGEND: StateGroup[] = ["healthy", "attention", "nocoverage", "handled"];
+
+// ── Label geometry ──────────────────────────────────────────────────────────
+// SVG offers no text metrics before paint, and measuring forty-odd labels with
+// getComputedTextLength would force a synchronous layout on every 2s frame. An
+// average advance per face is enough: these boxes only decide whether two labels
+// are fighting for the same space, and erring wide costs at worst a crew name
+// that would just have squeezed in.
+// Measured off the rendered board, and deliberately generous. A flat advance
+// cannot be right for both "Mariam" and "Coastal Access Road" - the wide caps in
+// a short name run to ~0.72 of the font size per character while a long string
+// averages ~0.58 - so this is set to the worst case and over-reserves for long
+// labels. Erring wide costs at most a shifted area name or a dropped crew name,
+// both recoverable; erring narrow puts two labels through each other, which is
+// the thing being fixed.
+const SANS_ADV = 0.72;
+const MONO_ADV = 0.68;
+/** The 3px halo, plus air so two cleared labels do not end up flush. */
+const HALO_PAD = 6;
+/** Half-width of the keep-clear square around a drawn mark. */
+const MARK_CLEAR = 7;
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+type Anchor = "start" | "middle" | "end";
+interface Placement {
+  x: number;
+  y: number;
+  anchor: Anchor;
+}
+
+const overlaps = (a: Box, b: Box) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+function box(text: string, p: Placement, size: number, adv: number): Box {
+  const w = text.length * size * adv + HALO_PAD;
+  const x = p.anchor === "start" ? p.x : p.anchor === "end" ? p.x - w : p.x - w / 2;
+  return { x, y: p.y - size * 0.82, w, h: size * 1.15 + HALO_PAD };
+}
+
+/** Lean inward: a label near the right edge is offered the left side first. */
+const sideFirst = (x: number): Anchor[] => (x > W * 0.62 ? ["end", "start"] : ["start", "end"]);
+
+/** Beside the mark, then above it, then below. First clear position wins. */
+function pick(
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  adv: number,
+  sides: Anchor[],
+  clear: (b: Box) => boolean
+): Placement | null {
+  const cands: Placement[] = sides.map((a) => ({
+    x: a === "start" ? x + 9 : x - 9,
+    y: y + 4,
+    anchor: a,
+  }));
+  cands.push({ x, y: y - 11, anchor: "middle" }, { x, y: y + 17, anchor: "middle" });
+  return cands.find((c) => clear(box(text, c, size, adv))) ?? null;
+}
 
 interface Props {
   assets: Asset[];
@@ -241,6 +305,74 @@ function FleetMapImpl({
     });
   }, [assets, project]);
 
+  // Where every piece of text on the board goes.
+  //
+  // Thirty machines, six technicians, two depots and five working areas on one
+  // 900x640 surface put labels on top of marks and on top of each other. The
+  // working-area names were the worst of it: each sat at its polygon's centroid,
+  // which is exactly where the machines that define the polygon are.
+  //
+  // Nothing here moves a MARK - a label that has drifted off its subject is
+  // worse than no label. Each label is offered a few positions beside the thing
+  // it names and takes the first that is clear. Priority runs machine id, then
+  // area name, then crew first name, because that is the order the demo points
+  // at them; a crew name that cannot be placed is dropped rather than stacked,
+  // and stays available on hover and to a screen reader through the <title>.
+  const labels = useMemo(() => {
+    const taken: Box[] = [];
+    const clear = (b: Box) => !taken.some((o) => overlaps(o, b));
+
+    // Marks are obstacles, never candidates: they are drawn either way.
+    const block = (x: number, y: number, r: number) =>
+      taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
+    for (const m of markers) block(m.x, m.y, MARK_CLEAR);
+    const techAt = technicians.map((t) => project(t.latitude, t.longitude));
+    for (const [x, y] of techAt) block(x, y, MARK_CLEAR);
+    for (const wh of warehouses) {
+      const [x, y] = project(wh.latitude, wh.longitude);
+      block(x, y, MARK_CLEAR);
+    }
+
+    // Machine ids first, and unconditionally: these are the ones being pointed
+    // at, so they claim their space before anything else competes for it.
+    const asset: Record<string, Placement> = {};
+    assets.forEach((a, i) => {
+      const shown = a.id === selectedId || (STATE_GROUP[a.state] ?? "healthy") === "attention";
+      if (!shown) return;
+      const { x, y } = markers[i];
+      const p =
+        pick(a.id, x, y, 10, MONO_ADV, sideFirst(x), clear) ??
+        { x: x + 10, y: y + 4, anchor: "start" as const };
+      taken.push(box(a.id, p, 10, MONO_ADV));
+      asset[a.id] = p;
+    });
+
+    // Area names: always drawn, best effort. Dropping one leaves a fenced
+    // outline with no name, which reads as a defect rather than as decluttering.
+    const zone = zones.map((z) => {
+      const text = siteLabel(z.site);
+      const cands: Placement[] = [0, -15, 15, -29, 29, -43, 43].map((dy) => ({
+        x: z.cx,
+        y: z.cy + dy,
+        anchor: "middle" as const,
+      }));
+      const p = cands.find((c) => clear(box(text, c, 10.5, SANS_ADV))) ?? cands[0];
+      taken.push(box(text, p, 10.5, SANS_ADV));
+      return { text, ...p };
+    });
+
+    // Crew names last, and droppable.
+    const tech = technicians.map((t, i) => {
+      const text = t.name.split(" ")[0];
+      const [x, y] = techAt[i];
+      const p = pick(text, x, y, 11, SANS_ADV, sideFirst(x), clear);
+      if (p) taken.push(box(text, p, 11, SANS_ADV));
+      return p ? { text, ...p } : null;
+    });
+
+    return { asset, zone, tech };
+  }, [assets, markers, selectedId, technicians, warehouses, zones, project]);
+
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // The reduce-motion block in base.css neutralises CSS animations. SMIL is not a
@@ -363,7 +495,7 @@ function FleetMapImpl({
         })}
 
         {/* Site working areas */}
-        {zones.map((z) => (
+        {zones.map((z, zi) => (
           <g key={z.site}>
             <polygon points={z.d} fill="var(--map-zone-fill)" opacity="0.6" filter={`url(#soft-${uid})`} />
             <polygon
@@ -374,15 +506,15 @@ function FleetMapImpl({
               strokeDasharray="3 4"
             />
             <text
-              x={z.cx}
-              y={z.cy}
-              textAnchor="middle"
+              x={labels.zone[zi].x}
+              y={labels.zone[zi].y}
+              textAnchor={labels.zone[zi].anchor}
               fill="var(--map-label)"
               fontSize="10.5"
               fontFamily="var(--font-sans)"
               fontWeight="500"
             >
-              {z.site.replace(/^.*—\s*/, "")}
+              {labels.zone[zi].text}
             </text>
           </g>
         ))}
@@ -473,7 +605,7 @@ function FleetMapImpl({
         })}
 
         {/* Technicians */}
-        {technicians.map((t) => {
+        {technicians.map((t, ti) => {
           const [x, y] = project(t.latitude, t.longitude);
           const busy = !t.available;
           return (
@@ -486,10 +618,16 @@ function FleetMapImpl({
                 d={`M${x},${y - 6} L${x + 5.5},${y + 4} L${x},${y + 1.5} L${x - 5.5},${y + 4} Z`}
                 fill={busy ? "var(--map-tech-busy)" : "var(--map-tech)"}
               />
-              <text x={x + 9} y={y + 4} fill="var(--map-label)" fontSize="11"
-                    fontFamily="var(--font-sans)">
-                {t.name.split(" ")[0]}
-              </text>
+              {/* Dropped rather than stacked when the board is too busy here.
+                  The name stays in the accessible name and the hover title. */}
+              {labels.tech[ti] && (
+                <text x={labels.tech[ti].x} y={labels.tech[ti].y}
+                      textAnchor={labels.tech[ti].anchor}
+                      fill="var(--map-label)" fontSize="11"
+                      fontFamily="var(--font-sans)">
+                  {labels.tech[ti].text}
+                </text>
+              )}
             </g>
           );
         })}
@@ -564,8 +702,10 @@ function FleetMapImpl({
               )}
               <circle cx={x} cy={y} r={sel ? 6 : 4.6} fill={c}
                       stroke="var(--map-marker-stroke)" strokeWidth="1.5" />
-              {(sel || alert) && (
-                <text x={x + 10} y={y + 4} fill="var(--text)" fontSize="10"
+              {labels.asset[a.id] && (
+                <text x={labels.asset[a.id].x} y={labels.asset[a.id].y}
+                      textAnchor={labels.asset[a.id].anchor}
+                      fill="var(--text)" fontSize="10"
                       fontFamily="var(--font-mono)">
                   {a.id}
                 </text>

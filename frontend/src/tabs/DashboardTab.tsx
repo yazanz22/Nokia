@@ -3,7 +3,7 @@ import { FleetMap } from "../components/FleetMap";
 import { KpiBar } from "../components/KpiBar";
 import { AgentStatus } from "../components/AgentTrace";
 import { WorkOrderCard } from "../components/WorkOrderCard";
-import { EmptyState } from "../components/StateBlock";
+import { EmptyState, LoadingRows } from "../components/StateBlock";
 import type { LiveState } from "../lib/ws";
 import type { RiskRow } from "../types";
 import { href } from "../lib/router";
@@ -63,9 +63,13 @@ export function DashboardTab({
   // site rather than a selection: something going dark is the thing you want on
   // screen, and it is why this panel does not wait to be clicked.
   const focused = useMemo(() => {
-    const open = incidents.find((i) => i.closed_at === null);
-    if (open) return open;
-    return [...incidents].sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
+    // Newest first in BOTH branches. incidents is in insertion order, so a
+    // bare .find() returned the oldest still-open one while the closed
+    // fallback below returned the newest: inject a second scenario while the
+    // first is still triaging and the panel narrates the one nobody is
+    // pointing at, then jumps mid-sentence when the older one closes.
+    const byNewest = [...incidents].sort((a, b) => b.opened_at.localeCompare(a.opened_at));
+    return byNewest.find((i) => i.closed_at === null) ?? byNewest[0];
   }, [incidents]);
 
   const openWorkOrders = workOrders
@@ -122,6 +126,7 @@ export function DashboardTab({
               <AgentStatus
                 incident={focused}
                 steps={focused ? (state.trace[focused.id] ?? []) : []}
+                ready={state.ready}
               />
             </div>
           </section>
@@ -160,7 +165,9 @@ export function DashboardTab({
                   {actionError}
                 </div>
               )}
-              {openWorkOrders.length === 0 ? (
+              {!state.ready ? (
+                <LoadingRows rows={3} />
+              ) : openWorkOrders.length === 0 ? (
                 <EmptyState
                   title="Nobody is out"
                   body="A work order is raised only once the network has been ruled out as the cause. An empty list here is the saving, not a gap in the record."

@@ -74,6 +74,11 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
     try {
       setRes(await runLiveCheck(assetId ?? undefined));
     } catch (e) {
+      // Clear the previous result too. Leaving it mounted rendered the error
+      // hint directly above the last successful run's LIVE badges and round
+      // trip times - a failed CAMARA call presenting itself as a good one, on
+      // the one panel whose whole job is showing the integration is real.
+      setRes(null);
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);

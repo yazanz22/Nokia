@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ShieldCheck } from "@phosphor-icons/react";
 import { AgentTrace } from "../components/AgentTrace";
 import { WorkOrderCard } from "../components/WorkOrderCard";
-import { EmptyState } from "../components/StateBlock";
+import { EmptyState, LoadingRows } from "../components/StateBlock";
 import type { LiveState } from "../lib/ws";
 import type { IncidentStatus } from "../types";
 import { href, navigate } from "../lib/router";
@@ -125,7 +125,9 @@ export function IncidentsTab({ state, focusId }: { state: LiveState; focusId: st
             <span className="panel-note">{shown.length}</span>
           </div>
           <div className="panel-body is-flush">
-            {shown.length === 0 ? (
+            {!state.ready ? (
+              <LoadingRows rows={6} />
+            ) : shown.length === 0 ? (
               <EmptyState
                 icon={ShieldCheck}
                 title={filter === "all" ? "No incidents" : "Nothing under this filter"}

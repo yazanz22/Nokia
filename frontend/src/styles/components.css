@@ -113,7 +113,11 @@
      middle-click, but they are navigation, not prose: no underline. */
   text-decoration: none;
   font-size: var(--text-sm);
-  font-weight: 500;
+  /* Set at the active weight even when inactive. Geist Variable is wider at
+     600, so promoting the current tab grew its box and nudged every tab to its
+     right along - a visible jitter on each of the six nav clicks in the demo.
+     Colour, the accent underline and the filled icon already carry the state. */
+  font-weight: 600;
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   transition: color var(--dur-fast) var(--ease),
@@ -127,7 +131,6 @@
 .tab[aria-current="page"] {
   color: var(--text);
   border-bottom-color: var(--accent);
-  font-weight: 600;
 }
 
 .tab svg {
@@ -273,7 +276,11 @@ a.panel-note:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1px;
-  background: var(--line);
+  /* The tiles carry the hairlines, not the container. There are seven of them
+     and seven is prime, so no column count divides them evenly: below ~1100px
+     the last row holds one tile and five empty cells. Painting the container
+     --line turned those cells into a solid grey slab under the hero numbers. */
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   overflow: hidden;
@@ -281,6 +288,9 @@ a.panel-note:hover {
 
 .kpi {
   background: var(--surface);
+  /* Draws into the 1px gutter from both sides, so adjacent tiles share one
+     hairline. Clipped at the container edge by its overflow: hidden. */
+  outline: 1px solid var(--line);
   padding: var(--s-3) var(--s-4);
   display: flex;
   flex-direction: column;
@@ -1379,7 +1389,7 @@ th .th-sort:hover {
   flex: 1 1 auto;
   display: grid;
   place-items: center;
-  padding: var(--s-6);
+  padding: var(--s-8);
 }
 
 /* Buttons that stay focusable while unavailable, so focus is not dropped when a

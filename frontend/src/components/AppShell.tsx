@@ -44,6 +44,7 @@ export function AppShell({
   chips,
   theme,
   onToggleTheme,
+  feedLost,
   children,
 }: {
   route: TabId;
@@ -51,6 +52,10 @@ export function AppShell({
   chips: ShellChips;
   theme: ThemeChoice;
   onToggleTheme: () => void;
+  /** A snapshot arrived and then the stream stopped. Distinct from the socket
+      never having connected, which the tabs show as loading rather than as a
+      site where nothing is happening. */
+  feedLost: boolean;
   children: React.ReactNode;
 }) {
   // Switching tabs swaps the entire page while focus stays on the nav link, so a
@@ -135,6 +140,18 @@ export function AppShell({
       </nav>
 
       <div className="app-content" id="content" ref={contentRef} tabIndex={-1}>
+        {/* Everything below this is the last frame that arrived, and it looks
+            exactly as live as it did while it was. The relative timestamps
+            freeze with it - they are computed during render, and renders stop
+            when frames do - so a dashboard dead for five minutes goes on
+            reporting every machine as seen seconds ago. Say so at the top
+            rather than let a still picture pass for a running site. */}
+        {feedLost && (
+          <div className="banner is-bad" role="alert">
+            Live feed lost, reconnecting. Everything below is frozen as of the last
+            frame received and is no longer being updated.
+          </div>
+        )}
         {children}
       </div>
     </div>

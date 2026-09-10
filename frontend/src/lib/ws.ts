@@ -14,6 +14,10 @@ import type {
 } from "../types";
 
 export interface LiveState {
+  /** False until the first snapshot lands. An empty fleet and a fleet that has
+      not arrived yet are the same object otherwise, and the difference decides
+      whether "Every machine is reporting" is a finding or a guess. */
+  ready: boolean;
   assets: Record<string, Asset>;
   technicians: Record<string, Technician>;
   warehouses: Record<string, Warehouse>;
@@ -27,6 +31,7 @@ export interface LiveState {
 }
 
 const empty: LiveState = {
+  ready: false,
   assets: {},
   technicians: {},
   warehouses: {},
@@ -54,6 +59,7 @@ function reducer(state: LiveState, ev: WsEvent): LiveState {
       const workOrders: Record<string, WorkOrder> = {};
       for (const w of p.work_orders ?? []) workOrders[w.id] = w;
       return {
+        ready: true,
         assets,
         technicians,
         warehouses,

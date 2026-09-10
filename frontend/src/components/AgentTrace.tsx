@@ -1,7 +1,7 @@
 import { ArrowRight, CheckCircle, CircleNotch } from "@phosphor-icons/react";
 import type { Incident, TraceStep } from "../types";
 import { href } from "../lib/router";
-import { EmptyState } from "./StateBlock";
+import { EmptyState, LoadingRows } from "./StateBlock";
 
 /**
  * The agent's reasoning, in two depths.
@@ -39,10 +39,15 @@ function verdict(incident: Incident | undefined): { label: string; tone: string 
 export function AgentStatus({
   incident,
   steps,
+  ready,
 }: {
   incident: Incident | undefined;
   steps: TraceStep[];
+  /** The first snapshot has landed. Before it has, there is no fleet here to
+      be quiet, and claiming every machine is reporting would be a guess. */
+  ready: boolean;
 }) {
+  if (!ready) return <LoadingRows rows={3} />;
   if (!incident) {
     return (
       <EmptyState
