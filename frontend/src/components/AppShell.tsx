@@ -43,14 +43,14 @@ export function AppShell({
   badges,
   chips,
   theme,
-  onCycleTheme,
+  onToggleTheme,
   children,
 }: {
   route: TabId;
   badges: Partial<Record<TabId, { count: number; tone?: "bad" | "warn" }>>;
   chips: ShellChips;
   theme: ThemeChoice;
-  onCycleTheme: () => void;
+  onToggleTheme: () => void;
   children: React.ReactNode;
 }) {
   // Switching tabs swaps the entire page while focus stays on the nav link, so a
@@ -106,7 +106,7 @@ export function AppShell({
             <span className="chip-live-dot" aria-hidden />
             {chips.connected ? "Streaming" : "Reconnecting"}
           </span>
-          <ThemeToggle choice={theme} onCycle={onCycleTheme} />
+          <ThemeToggle choice={theme} onToggle={onToggleTheme} />
         </div>
       </header>
 

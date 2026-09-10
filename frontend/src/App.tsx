@@ -24,7 +24,7 @@ interface Health {
 export default function App() {
   const { state, connected } = useLiveState();
   const route = useRoute();
-  const { choice, cycle } = useTheme();
+  const { choice, toggle } = useTheme();
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
 
@@ -117,7 +117,7 @@ export default function App() {
         connected,
       }}
       theme={choice}
-      onCycleTheme={cycle}
+      onToggleTheme={toggle}
     >
       {route.tab === "dashboard" && (
         <DashboardTab

@@ -1,37 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type ThemeChoice = "light" | "dark" | "system";
+export type ThemeChoice = "light" | "dark";
 
 const KEY = "sentinel.theme";
 
-/** What "system" currently resolves to. */
-function systemTheme(): "light" | "dark" {
+/** What the machine is set to, used only to pick the opening side. */
+function systemTheme(): ThemeChoice {
+  if (typeof window === "undefined") return "light";
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function read(): ThemeChoice {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === "light" || v === "dark" || v === "system") return v;
+    if (v === "light" || v === "dark") return v;
   } catch {
-    /* private mode, blocked storage: fall through to the system default */
+    /* private mode, blocked storage: fall through to the machine's setting */
   }
-  return "system";
+  // Nothing stored yet — which also covers the "system" that earlier builds
+  // wrote here. Open on whatever the machine is set to so the first paint is
+  // never a surprise, then stay where it is put.
+  return systemTheme();
 }
 
 function apply(choice: ThemeChoice) {
-  const resolved = choice === "system" ? systemTheme() : choice;
-  document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.theme = choice;
 }
 
 /**
- * Theme state for the whole app.
+ * Theme state for the whole app: two sides, nothing else.
  *
- * Three states rather than a boolean, because "follow the OS" is a real answer
- * and a two-way toggle cannot express it: a machine that switches to dark at
- * dusk should take the dashboard with it unless somebody has said otherwise.
- * The choice is stored per browser; the resolved value is stamped on <html> so
- * every token swap happens in one place (see styles/tokens.css).
+ * The OS preference decides the opening side on a browser that has never
+ * chosen, and is not consulted again — once somebody picks a side the
+ * dashboard stays on it, including across a machine's own dusk switch. The
+ * chosen value is stored per browser and stamped on <html>, so every token
+ * swap happens in one place (see styles/tokens.css).
  */
 export function useTheme() {
   const [choice, setChoice] = useState<ThemeChoice>(read);
@@ -45,24 +48,11 @@ export function useTheme() {
     }
   }, [choice]);
 
-  // Follow the OS while the choice is "system", and stop following the moment
-  // somebody picks a side.
-  useEffect(() => {
-    if (choice !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => apply("system");
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [choice]);
-
-  const cycle = useCallback(() => {
-    setChoice((c) => (c === "light" ? "dark" : c === "dark" ? "system" : "light"));
+  const toggle = useCallback(() => {
+    setChoice((c) => (c === "dark" ? "light" : "dark"));
   }, []);
 
-  const resolved: "light" | "dark" =
-    choice === "system" ? (typeof window === "undefined" ? "light" : systemTheme()) : choice;
-
-  return { choice, resolved, setChoice, cycle };
+  return { choice, setChoice, toggle };
 }
 
 /** Stamp the stored theme before React mounts, so there is no light flash. */
