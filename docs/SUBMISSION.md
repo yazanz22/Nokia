@@ -26,7 +26,7 @@ Select your Phase 1 (Idea) submission.
 When heavy equipment on a NEOM-scale site stops sending telemetry, nobody can tell
 whether the machine broke down or simply drove into a cellular dead zone. The default
 is to send a field engineer across the desert to find out — an expensive guess that
-often ends with a mechanic standing next to a perfectly healthy excavator.
+often ends with a mechanic standing next to a perfectly healthy generator.
 
 The reason this is hard is structural: you cannot diagnose a silent machine from the
 machine, because it is silent. In our fleet data, 49% of silent-asset events are

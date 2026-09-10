@@ -32,7 +32,17 @@ MaintenanceType = Literal["corrective", "preventive", "predictive"]
 
 # ── Assets & telemetry ──────────────────────────────────────────────────────
 
-AssetKind = Literal["excavator", "dozer", "haul_truck", "crane", "grader", "loader"]
+# Unattended plant, not crewed machines. The whole premise is that a silent asset
+# cannot be asked what happened, and an excavator has an operator in the cab who
+# would simply radio in - so the fleet is the equipment that runs with nobody on
+# it: gensets, pump sets, compressors, light towers, hydraulic power packs and
+# welder sets. All six are diesel-engined, which is what keeps the four failing
+# components (alternator, radiator core, main bearing set, hydraulic pump) honest
+# for every kind. All six are also equally at home on a construction site, a
+# container terminal and a factory yard, which is the market the pitch claims.
+AssetKind = Literal[
+    "generator", "pump_set", "air_compressor", "light_tower", "power_pack", "welder_set"
+]
 
 AssetState = Literal[
     "healthy",       # streaming, nominal

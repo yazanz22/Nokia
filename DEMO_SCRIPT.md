@@ -23,16 +23,24 @@ Numbers marked ≈ vary per run — **read what's on screen, don't recite from m
 |---|---|
 | **Scenario order** | Blind spot **first** (counter-intuitive win), roaming **second** (the cause nobody thinks of), hardware **third** (the payoff). |
 | **Reset between scenarios?** | **No.** Running all three without a reset leaves the KPI bar reading *2 false dispatches avoided · 1 dispatch issued* — the entire pitch in one frame. Reset only *before* you start. |
-| **Scenario A asset** | `EQ-0295` — Haul Truck HT-295, Red Sea Global, Coastal Access Road |
+| **Scenario A asset** | `EQ-0295` — Welder Set WS-295, Red Sea Global, Coastal Access Road |
 | **Scenario B asset** | `EQ-0051` — roaming. Any healthy asset works; the mock synthesises the foreign network. |
-| **Scenario C asset** | `EQ-0180` — Loader LD-180, NEOM, Trojena Ridge |
-| **Scenario D asset** | `EQ-0233` — Excavator EX-233, Red Sea Global — Coastal Access Road. **Use this one and no other.** Crossing time is a property of where the machine starts, and across the current fleet it ranges from 10 s (`EQ-0097`) to 58 s (`EQ-0274`). `EQ-0233` starts 4.6 km from the site centre and crosses at **34 s**, every time — it was the same in 400 simulated runs, because the drift step dwarfs the random walk. It also starts nearest the middle of the map, so it visibly drives the whole way out — and the forecasting model scores it **not at risk**, so it carries no amber ring and "nothing is wrong with this one" is true on both counts. |
+| **Scenario C asset** | `EQ-0180` — Pump Set PS-180, NEOM, Trojena Ridge |
+| **Scenario D asset** | `EQ-0233` — Generator GN-233, Red Sea Global — Coastal Access Road. **Use this one and no other.** Crossing time is a property of where the machine starts, and across the current fleet it ranges from 10 s (`EQ-0097`) to 58 s (`EQ-0274`). `EQ-0233` starts 4.6 km from the site centre and crosses at **34 s**, every time — it was the same in 400 simulated runs, because the drift step dwarfs the random walk. It also starts nearest the middle of the map, so it visibly travels the whole way out — and the forecasting model scores it **not at risk**, so it carries no amber ring and "nothing is wrong with this one" is true on both counts. |
 | **Modes** | See Pre-flight. Decide `NAC_MODE` / `AGENT_MODE` before you walk in, not on stage. |
 | **Model** | `groq:openai/gpt-oss-120b`. `groq:qwen/qwen3.8-27b` also verified end to end if Groq degrades one of them. |
 
-Why those assets: a **haul truck** is mobile, so "it drove into a dead zone" is intuitive. A **loader**
-sits and works, so "it didn't go anywhere, it broke" is equally intuitive. The contrast does narrative
-work for you.
+Why those assets: every machine on this fleet is **unattended plant** — gensets, pump sets,
+compressors, light towers, power packs, welder sets. That is the point, and it is worth one sentence
+on camera, because the obvious objection to the whole product is *"doesn't somebody sit in it?"*
+Nobody sits in any of these. They run on their own, overnight and between shifts, and when one goes
+quiet there is no operator to radio in.
+
+The contrast between A and C still does the narrative work. A **welder set** is repositioned as the
+works move, so "it ended up parked somewhere the network doesn't reach" is intuitive. A **pump set**
+is dropped once and runs for weeks, so "it hasn't gone anywhere, it broke" is equally intuitive.
+Same symptom, opposite cause — and in neither case is there a person on the machine who could tell
+you which.
 
 > ### ⚠️ Groq has a 200,000 token-per-day cap on the free tier
 >
@@ -104,7 +112,7 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 > diagnose a silent machine from the machine.
 >
 > So today the answer is: send someone and find out. A two-hour drive across the desert to *maybe*
-> stand next to a perfectly healthy excavator that simply lost signal."
+> stand next to a perfectly healthy generator that simply lost signal."
 
 **Driver:** dashboard on screen, nothing clicked yet.
 
@@ -136,7 +144,8 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 **Driver:** confirm the buttons read `EQ-0295` → click **Cellular blind spot**.
 
-> "Haul truck HT-295, out on the Red Sea coastal access road. Telemetry just stopped."
+> "Welder set WS-295, out on the Red Sea coastal access road. Nobody works it — it runs on its
+> own. Telemetry just stopped."
 
 *(≈2 s — the asset turns red, an incident opens.)*
 
@@ -194,8 +203,9 @@ curl -X POST "http://127.0.0.1:8000/api/scenarios/reset?clear_memory=true"
 
 **Driver:** select `EQ-0180`. **Confirm the buttons read `EQ-0180`.** Click **Hardware fault**.
 
-> "Loader LD-180, up at Trojena Ridge. Same symptom exactly — telemetry stops, network reports the
-> device **not connected**. Identical to Scenario A. Completely different cause."
+> "Pump set PS-180, up at Trojena Ridge, dewatering unattended. Same symptom exactly — telemetry
+> stops, network reports the device **not connected**. Identical to Scenario A. Completely different
+> cause."
 
 *(watch the trace)*
 

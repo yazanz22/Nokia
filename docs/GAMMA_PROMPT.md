@@ -100,7 +100,7 @@ Location Retrieval and Geofencing Subscriptions, via Nokia Network as Code
 
 CARD 2 — THE PROBLEM
 A silent machine cannot tell you why it is silent.
-When an excavator on a NEOM-scale site stops sending telemetry, the data that would
+When a generator on a NEOM-scale site stops sending telemetry, the data that would
 explain the silence is exactly the data that stopped arriving. Broken engine, failed
 sensor, and cellular dead zone all look identical from the operations centre: nothing.
 The default response is to send a technician to go and find out. That is a guess, and

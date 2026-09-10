@@ -63,14 +63,18 @@ _features = load_features_module()
 # The four fault-mode labels, in the order ml/train.py fitted them.
 LABELS = tuple(_features.DIAGNOSTIC_CLASSES)
 
-_KINDS: list[AssetKind] = ["excavator", "dozer", "haul_truck", "crane", "grader", "loader"]
+# See models.AssetKind for why these are unattended plant rather than crewed
+# machines. The prefix is what shows on the map and the work order.
+_KINDS: list[AssetKind] = [
+    "generator", "pump_set", "air_compressor", "light_tower", "power_pack", "welder_set"
+]
 _KIND_PREFIX = {
-    "excavator": "EX",
-    "dozer": "DZ",
-    "haul_truck": "HT",
-    "crane": "CR",
-    "grader": "GR",
-    "loader": "LD",
+    "generator": "GN",
+    "pump_set": "PS",
+    "air_compressor": "AC",
+    "light_tower": "LT",
+    "power_pack": "HP",
+    "welder_set": "WS",
 }
 # ── The five site working areas ─────────────────────────────────────────────
 #
@@ -359,7 +363,12 @@ def _asset_from_id(asset_id: str) -> Asset:
     # Current position = latest NORMAL reading if any, else latest of anything.
     normal = pool["NORMAL"]
     ref = (normal or [r for rs in pool.values() for r in rs])[-1]
-    kind = _KINDS[stable_int(asset_id) % len(_KINDS)]
+    # Namespaced, like the service clock below. Bare stable_int(asset_id) is also
+    # what seeds the simulator's per-asset sampler (simulator/profiles.py), so
+    # deriving the kind from the same stream tied a machine's type to its telemetry
+    # RNG and made the two move together - which is how three of the four scripted
+    # demo assets ended up the same kind.
+    kind = _KINDS[stable_int(asset_id + ":kind") % len(_KINDS)]
     num = asset_id.split("-")[-1].lstrip("0") or "0"
     # ── the service clock ───────────────────────────────────────────────────
     # Hours on the machine and hours since its last service, seeded from the id so a
