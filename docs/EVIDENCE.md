@@ -51,6 +51,12 @@ measured, and already carries a budget line.
 A wasted trip is not the only cost. Every hour the wrong diagnosis delays the right repair
 is another hour of idle crew and schedule risk.
 
+These figures are quoted as their sources measured them — on crewed heavy equipment,
+excavators included — while the fleet we model is unattended plant. We keep them because
+what they establish is the *cost structure* of a machine being out of service on a
+schedule-driven site, which does not depend on whether anybody was sitting in it. We do
+not restate them as figures for gensets or pump sets, because nobody measured those.
+
 ---
 
 ## 3. Predicting failure early is established practice, with measured returns
@@ -193,7 +199,18 @@ and arguable rather than hidden inside a headline number.
 | Unplanned downtime | $3,200–$8,700 per machine per day | Sourced — FleetRabbit (vendor) |
 | Unplanned vs planned repair | 3–5× more expensive | Sourced — For Construction Pros |
 | Predictive maintenance impact | 18–25% lower cost, up to 50% less downtime | Sourced — McKinsey |
-| **Share of false dispatches we prevent** | **40%** | **Ours. A target, not a measurement — we have run no field trial.** |
+| **Share of false dispatches we prevent** | **80%** | **Ours. A target, not a measurement — we have run no field trial.** |
+
+**Where 80% comes from, and what it is still not.** On held-out test data the diagnostic
+step separates network-caused silence from hardware failure with an **F1 of 1.00** across
+3,791 rows (`per_class_f1.NETWORK_OUTAGE` in [`ml/metrics.json`](../ml/metrics.json)) — on
+that data it never sends anyone for a coverage gap. We do not plan at 1.00, because the
+data is ours and it is separable enough that a hand-written rule reproduces the model's
+answer on all 15,000 rows; an F1 of 1.00 measures our generator, not a desert. 80% is that
+result discounted by a fifth for a field messier than any dataset. It remains a target we
+have not tested, and it is the single assumption a pilot exists to replace. A reader who
+wants the more conservative case can halve it: every figure in the tables below scales
+linearly, and at 40% they are exactly half of what is printed.
 
 ### Fleet volumes are our arithmetic, not a citation
 
@@ -203,25 +220,25 @@ such — a reader who disagrees with the headcount can substitute their own.
 
 ### Stream 1 — dispatches never taken
 
-`techs × rolls/day × 252 × NFF% × $/roll × 40% captured`
+`techs × rolls/day × 252 × NFF% × $/roll × 80% captured`
 
 | Fleet | Case | Rolls/yr | NFF/yr | NFF exposure | We save |
 |---|---|---|---|---|---|
-| Small — 5 techs | conservative | 2,520 | 428 | $107k | **$43k** |
-| | **midpoint** | 4,410 | 816 | $347k | **$139k** |
-| | upper | 6,300 | 1,260 | $1.26M | $504k |
-| Mid-sized — 30 techs | conservative | 15,120 | 2,570 | $643k | **$257k** |
-| | **midpoint** | 26,460 | 4,895 | $2.08M | **$832k** |
-| | upper | 37,800 | 7,560 | $7.56M | $3.02M |
-| Large — 200 techs | conservative | 100,800 | 17,136 | $4.28M | **$1.71M** |
-| | **midpoint** | 176,400 | 32,634 | $13.87M | **$5.55M** |
-| | upper | 252,000 | 50,400 | $50.4M | $20.16M |
+| Small — 5 techs | conservative | 2,520 | 428 | $107k | **$86k** |
+| | **midpoint** | 4,410 | 816 | $347k | **$278k** |
+| | upper | 6,300 | 1,260 | $1.26M | $1.01M |
+| Mid-sized — 30 techs | conservative | 15,120 | 2,570 | $643k | **$514k** |
+| | **midpoint** | 26,460 | 4,895 | $2.08M | **$1.66M** |
+| | upper | 37,800 | 7,560 | $7.56M | $6.05M |
+| Large — 200 techs | conservative | 100,800 | 17,136 | $4.28M | **$3.42M** |
+| | **midpoint** | 176,400 | 32,634 | $13.87M | **$11.10M** |
+| | upper | 252,000 | 50,400 | $50.4M | $40.32M |
 
 Cases are: conservative = 2 rolls/day, 17% NFF, $250/roll. Midpoint = 3.5, 18.5%, $425.
 Upper = 5, 20%, $1,000.
 
 **We quote the midpoint.** The upper case stacks every optimistic assumption at once and is
-included only to bound the range honestly, not to be used. A $50M headline would discredit
+included only to bound the range honestly, not to be used. A $40M headline would discredit
 the figures either side of it.
 
 ### Stream 2 — downtime avoided
@@ -243,12 +260,14 @@ an operator can apply their own rate.
 
 | Price | 500-asset fleet | Against the mid-sized midpoint saving |
 |---|---|---|
-| $15/asset/month | $90k/yr | ~9× |
-| $30/asset/month | $180k/yr | ~4.6× |
-| $50/asset/month | $300k/yr | ~2.8× |
+| $15/asset/month | $90k/yr | ~18.5× |
+| $30/asset/month | $180k/yr | ~9.2× |
+| $50/asset/month | $300k/yr | ~5.5× |
 
-At $30 per asset per month the system pays for itself on avoided dispatches alone, before any
-downtime saving is counted.
+At $30 per asset per month the system pays for itself several times over on avoided
+dispatches alone, before any downtime saving is counted. At the more conservative 40%
+capture rate those multiples halve to ~9×, ~4.6× and ~2.8×, and the $30 tier still clears
+its own cost four times over — the case does not depend on the capture rate being right.
 
 Every input above is someone else's published figure except the capture rate, the fleet
 headcounts and the price points, which are ours and are labelled rather than buried.
@@ -257,8 +276,10 @@ headcounts and the price points, which are ours and are labelled rather than bur
 
 ## What we do NOT claim
 
-- **The 40% / 25% / 15% headline figures are targets, not measurements.** We have not run
-  this on a real fleet.
+- **The 80% / 25% / 15% headline figures are targets, not measurements.** We have not run
+  this on a real fleet. The 80% is derived from a result on our own generated data and
+  then discounted; see the note under the savings model for exactly how, and for what the
+  arithmetic looks like at half that rate.
 - **The 17–20% NFF rate is telecom, not construction.** We use it to show the problem class
   is real and budgeted, not to size our own impact.
 - **Numbers computed from our own datasets describe the system's behaviour, not the world.**
@@ -285,6 +306,25 @@ headcounts and the price points, which are ours and are labelled rather than bur
   autonomy and loop closure — not a benchmark, and not a claim of an empty market.
 - **Not every remote asset is cellular.** Some sites run satellite or private LoRaWAN, where
   this approach does not apply. Giga-projects built with a national operator are where it does.
+- **We do not claim this helps much when somebody is sitting in the machine.** The obvious
+  objection to the whole product is that construction equipment has an operator who would
+  simply radio in. For a crewed machine that breaks down inside good coverage during a
+  shift, that is true and this system adds little. The fleet we model is *unattended
+  plant* — generators, pump sets, air compressors, light towers, hydraulic power packs,
+  welder sets — which runs overnight and between shifts with nobody on it. Two further
+  cases the objection does not reach: an operator whose telemetry uplink drops has no idea
+  anything happened and nothing to report, and the forecasting half concerns machines
+  running normally right now that are expected to fail in days, which no operator can call
+  in. The value concentrates in unattended assets, coverage-marginal ground, out-of-shift
+  hours and the forecast — not in a crewed breakdown at noon.
+- **The same plant exists outside construction, and that is a scope claim, not a sourced
+  one.** A container terminal and a factory yard run the same gensets, pump sets and
+  compressors on the same operator networks, with the same ambiguity when one goes quiet,
+  which is why the fleet is modelled as equipment common to all three rather than as
+  excavators. What we have *not* done is validate demand in ports, oil and gas, mining,
+  utilities or logistics. The market sizing in `source_docs/` is desk research against
+  published market reports, and the customer-discovery interviews behind it have not
+  happened yet.
 - **The fleet-scale dispatch volumes are our arithmetic, not a published finding.** None of the
   truck-roll sources tiers its figures by headcount; we multiplied a sourced per-technician rate
   by fleet sizes we chose. The rate itself carries two caveats of its own — its source words it
