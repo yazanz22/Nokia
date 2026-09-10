@@ -8,6 +8,7 @@ import {
   GROUP_LABEL,
   STATE_GROUP,
   ago,
+  agoSeconds,
   serviceDue,
   siteLabel,
 } from "../lib/format";
@@ -286,23 +287,49 @@ export function AssetsTab({
                   <dd>{ago(selected.last_seen)}</dd>
                 </dl>
 
-                {latest && (
-                  <>
-                    <div className="panel-head is-inline">
-                      <h3>Live telemetry</h3>
-                    </div>
-                    <dl className="dl">
-                      <dt>Engine temp</dt>
-                      <dd className="mono">{latest.engine_temp_c.toFixed(1)} °C</dd>
-                      <dt>Signal</dt>
-                      <dd className="mono">{latest.signal_strength_dbm.toFixed(0)} dBm</dd>
-                      <dt>Neighbour fails</dt>
-                      <dd className="mono">{latest.neighbor_fail_count}</dd>
-                      <dt>Telemetry age</dt>
-                      <dd className="mono">{latest.telemetry_age_sec.toFixed(0)} s</dd>
-                    </dl>
-                  </>
-                )}
+                {latest &&
+                  (() => {
+                    // The simulator emits one last reading and then stops: a
+                    // machine that has gone quiet keeps its final pre-silence
+                    // sample here forever, because nothing clears it. Headed
+                    // "Live telemetry" it read as a healthy machine reporting
+                    // seconds ago, on exactly the machine the whole product is
+                    // about - while "Last seen" two lines above climbed into
+                    // minutes. Nothing is stale-checked away: the reading is
+                    // real and the agent classifies against it. It is just
+                    // labelled as what it is, and dated.
+                    const stale = agoSeconds(latest.ts) > 30;
+                    return (
+                      <>
+                        <div className="panel-head is-inline">
+                          <h3>Last telemetry</h3>
+                          <span className="panel-note">{ago(latest.ts)}</span>
+                        </div>
+                        {stale && (
+                          <p className="hint">
+                            Nothing has arrived since. This is the last frame the machine
+                            sent before it went quiet.
+                          </p>
+                        )}
+                        <dl className="dl">
+                          <dt>Engine temp</dt>
+                          <dd className="mono">{latest.engine_temp_c.toFixed(1)} °C</dd>
+                          <dt>Signal</dt>
+                          <dd className="mono">{latest.signal_strength_dbm.toFixed(0)} dBm</dd>
+                          <dt>Neighbour fails</dt>
+                          <dd className="mono">{latest.neighbor_fail_count}</dd>
+                          {/* How stale the reading was when it was SENT - the gap
+                              between the sensor producing it and it arriving. Not
+                              the age of the frame, which is the dated note above.
+                              This is a diagnostic feature in its own right: drifting
+                              age with every physical channel normal is what marks a
+                              failed reporting sensor rather than a failed machine. */}
+                          <dt>Age when sent</dt>
+                          <dd className="mono">{latest.telemetry_age_sec.toFixed(0)} s</dd>
+                        </dl>
+                      </>
+                    );
+                  })()}
               </div>
             )}
           </div>
