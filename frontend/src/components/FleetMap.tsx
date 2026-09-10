@@ -749,6 +749,23 @@ function FleetMapImpl({
           </svg>
           Parts depot
         </span>
+        {/* The dashed outlines were the only thing on the board with no entry
+            here. They carried a name but never a KIND, so they read as a border
+            drawn around some machines and not others rather than as the site
+            those machines belong to. Two rects because the areas themselves are
+            drawn twice - a soft fill under a dashed edge - and a swatch that
+            only showed one of the two would not match what it explains. The
+            dash is tightened from the map's own 3 4: at this size that pattern
+            lays down two dashes and reads as a broken line, not a dashed one. */}
+        <span>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden focusable="false">
+            <rect x="1" y="1.5" width="10" height="9" rx="2"
+                  fill="var(--map-zone-fill)" opacity="0.6" />
+            <rect x="1" y="1.5" width="10" height="9" rx="2" fill="none"
+                  stroke="var(--map-zone-line)" strokeWidth="1" strokeDasharray="2.5 2.5" />
+          </svg>
+          Working area
+        </span>
       </div>
 
       {/* Four entries. The dead-zone, off-site and forecast rings used to have
