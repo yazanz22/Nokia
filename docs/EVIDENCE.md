@@ -323,8 +323,10 @@ headcounts and the price points, which are ours and are labelled rather than bur
   which is why the fleet is modelled as equipment common to all three rather than as
   excavators. What we have *not* done is validate demand in ports, oil and gas, mining,
   utilities or logistics. Our market sizing is desk research against
-  published market reports, and the customer-discovery interviews behind it have not
-  happened yet.
+  published market reports. Industry input so far is feedback from a practitioner at
+  Portec Link, an Abu Dhabi crane maintenance and spare-parts specialist serving port,
+  offshore, construction and mining operations, which we used to improve the prototype.
+  Structured customer-discovery interviews are the next step.
 - **The fleet-scale dispatch volumes are our arithmetic, not a published finding.** None of the
   truck-roll sources tiers its figures by headcount; we multiplied a sourced per-technician rate
   by fleet sizes we chose. The rate itself carries two caveats of its own — its source words it
