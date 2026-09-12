@@ -38,13 +38,13 @@ class AgentReport:
     running while an investigation has just silently gone without it.
 
     That endpoint is the documented pre-flight check for exactly that failure
-    (DEMO_SCRIPT.md — Groq's daily cap makes a fallback look identical on screen), so
+    (the demo pre-flight — Groq's daily cap makes a fallback look identical on screen), so
     each run now writes one report, whole, and never edits it afterwards. The two names
     survive as a summary of these, assigned as a pair in ``_record``.
     """
 
     incident_id: str
-    # "llm", "rule (fallback)" or "rule" — the strings DEMO_SCRIPT.md and
+    # "llm", "rule (fallback)" or "rule" — the strings the demo pre-flight and
     # scripts/scenario_smoke.py match on.
     agent: str
     error: str | None

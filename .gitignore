@@ -47,3 +47,9 @@ MTNG_NOTES.md
 
 # Agent skill specs — local tooling, not original submission material
 SKILLS/
+
+# Presentation and rehearsal material — local only, not submission code
+DEMO_SCRIPT.md
+docs/GAMMA_PROMPT.md
+docs/screenshots/
+source_docs/

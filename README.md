@@ -395,9 +395,6 @@ fleet itself
 is simulated and we say so: the sandbox issues a handful of test SIMs provisioned in Hungary, so they
 cannot stand in for thirty machines on a NEOM site.
 
-**Next:** exercise `AGENT_MODE=llm` (Pydantic AI + Groq — needs `GROQ_API_KEY`), rehearse against
-[DEMO_SCRIPT.md](DEMO_SCRIPT.md), record the backup video.
-
 ## Team FILO
 
 Faris Alshafie · Yazan Zarka · Yazan Abed · Omar Hawasheen

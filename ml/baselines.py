@@ -10,7 +10,7 @@ This script measures the strongest one we found: a threshold on **vibration slop
 which is feature 4 of the 26 the model already receives. Past 72 hours it beats the
 model, and the honest framing is that neither is strictly better — the slope rule is an
 earlier, much noisier smoke detector, and a fleet running this for real would run both.
-Everything the README, `docs/architecture.md`, `DEMO_SCRIPT.md` and `HANDOFF.md` say
+Everything the README and `docs/architecture.md` say
 about that trade comes from here, via ``ml/baselines.json``.
 
 Four questions, because "which is better" is not one question:

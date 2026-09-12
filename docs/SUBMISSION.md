@@ -170,7 +170,7 @@ Confirmed public.
 
 ## Video URL — **YOU**
 
-Record one clean run of the demo script (`DEMO_SCRIPT.md`), upload unlisted to
+Record one clean run of the demo, upload unlisted to
 YouTube, paste the link.
 
 ## Presentation — **YOU**
@@ -181,7 +181,7 @@ forecasting beats a threshold by days.
 
 ## Snapshots
 
-`docs/screenshots/` — dashboard at rest, mid-investigation, and the closing frame
+Uploaded with the form — dashboard at rest, mid-investigation, and the closing frame
 with Dispatches avoided, Incidents prevented and Dispatches issued each at 1.
 
 ## Source Code

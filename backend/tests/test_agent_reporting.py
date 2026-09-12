@@ -1,7 +1,7 @@
 """Who resolved which incident, and which source answered which call.
 
 Both questions are asked by a human immediately before a demo — `/api/debug/health`
-for "is the model actually running or has it silently fallen back?" (DEMO_SCRIPT.md's
+for "is the model actually running or has it silently fallen back?" (the demo's
 pre-flight checklist) and `/api/debug/nac` for "is this integration real?". Both used
 to be answered by a single mutable field that whichever run finished last had
 overwritten, so the answer could belong to a different investigation than the question.

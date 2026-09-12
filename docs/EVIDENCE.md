@@ -322,7 +322,7 @@ headcounts and the price points, which are ours and are labelled rather than bur
   compressors on the same operator networks, with the same ambiguity when one goes quiet,
   which is why the fleet is modelled as equipment common to all three rather than as
   excavators. What we have *not* done is validate demand in ports, oil and gas, mining,
-  utilities or logistics. The market sizing in `source_docs/` is desk research against
+  utilities or logistics. Our market sizing is desk research against
   published market reports, and the customer-discovery interviews behind it have not
   happened yet.
 - **The fleet-scale dispatch volumes are our arithmetic, not a published finding.** None of the

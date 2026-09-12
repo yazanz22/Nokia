@@ -98,7 +98,7 @@ _KIND_PREFIX = {
 # degrees: a degree of longitude is only 0.887 of a degree of latitude here, and
 # assigning on degrees would shear every boundary east-west.
 #
-# On the naming: ``DEMO_SCRIPT.md`` puts two of these names on camera — EQ-0295 is
+# On the naming: the demo puts two of these names on camera — EQ-0295 is
 # introduced as Red Sea Global / Coastal Access Road and EQ-0180 as NEOM / Trojena
 # Ridge — so the names are bound to the areas those two machines stand in. The
 # coordinates in dataset1.csv are synthetic and centred offshore of the real NEOM
