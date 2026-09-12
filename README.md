@@ -307,7 +307,7 @@ or manually:
 ```bash
 # backend  →  http://127.0.0.1:8000
 cd backend
-python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
+python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.lock.txt
 cp ../.env.example ../.env
 .venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
 
@@ -317,11 +317,12 @@ npm install
 npm run dev
 ```
 
-Then open the dashboard, pick an asset in **Scenario control**, and hit **Cellular blind spot** or
-**Hardware fault**. Watch the agent trace and work orders update live. **Sensor fault** and
-**Crossed the border (roaming)** exercise the other two silent-asset outcomes; **Leaving the site
-(geofence)** walks a perfectly healthy machine west across the perimeter until the operator's
-geofence catches it — no incident opened, one prevented.
+Then open the dashboard's **Simulation** tab, choose a machine under **Target machine**, and hit
+**Cellular blind spot** or **Hardware fault**. Switch to the **Dashboard** tab to watch the agent
+and work orders update live (a new incident does not switch tabs for you). **Sensor fault** and
+**Crossed the border** exercise the other two silent-asset outcomes; **Leaving the site** walks a
+perfectly healthy machine west across the perimeter until the operator's geofence catches it — no
+incident opened, one prevented.
 
 ### Configuration (`.env`)
 

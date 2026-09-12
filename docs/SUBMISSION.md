@@ -182,7 +182,7 @@ forecasting beats a threshold by days.
 ## Snapshots
 
 `docs/screenshots/` — dashboard at rest, mid-investigation, and the closing frame
-showing one false dispatch avoided alongside one dispatch issued.
+with Dispatches avoided, Incidents prevented and Dispatches issued each at 1.
 
 ## Source Code
 
@@ -199,7 +199,7 @@ About 3.7 MB zipped, well inside the 50 MB cap. Excludes `node_modules`, `.venv`
 
 ```
 PREREQUISITES
-  Docker, or Python 3.12+ and Node 20+.
+  Docker, or Python 3.12 and Node 20+.
 
 OPTION 1 — Docker (single container, recommended)
 
@@ -212,8 +212,10 @@ OPTION 2 — from source
 
   cd backend
   python -m venv .venv
-  .venv/Scripts/python -m pip install -r requirements.txt      # Windows
-  # .venv/bin/pip install -r requirements.txt                  # macOS/Linux
+  .venv/Scripts/python -m pip install -r requirements.lock.txt      # Windows
+  # .venv/bin/pip install -r requirements.lock.txt                  # macOS/Linux
+  # The lock file, not requirements.txt: the committed ML models were saved by
+  # the exact scikit-learn version it pins (same as the Dockerfile and CI).
   cd ../frontend && npm install && npm run build
   cd ../backend && .venv/Scripts/python -m uvicorn app.main:app --port 8000
 
@@ -221,25 +223,39 @@ OPTION 2 — from source
 
 USING THE DEMO
 
-  1. Pick an asset under "Simulate" and click "Cellular blind spot".
-     The agent investigates on its own. Watch "Agent reasoning" on the right.
-     Expected: incident closes as BLIND SPOT - NO DISPATCH, no work order raised.
+  The dashboard has six tabs. Scenarios are injected on the Simulation tab and
+  watched on the Dashboard tab; a new incident does not switch tabs for you.
 
-  2. Pick a different asset and click "Hardware fault".
-     Expected: the agent rules out the network, classifies the fault, retrieves
-     network-verified coordinates, and raises a work order routed to the nearest
-     technician once the depot holding the part is factored into the journey. The
-     card explains why a closer technician was passed over.
+  1. Simulation tab: choose a machine under "Target machine", then click
+     "Run on EQ-xxxx" on the "Cellular blind spot" card. Open the Dashboard tab.
+     Expected: the machine turns blue on the map and the Agent panel reads
+     "Coverage gap. Nobody dispatched." No work order is raised. "Read the full
+     reasoning" opens every step of the investigation on the Incidents tab.
 
-  Do not reset between the two. The KPI bar then reads
-  "1 false dispatch avoided" alongside "1 dispatch issued" — the same symptom
-  producing two opposite correct decisions, which is the whole product.
+  2. Simulation tab: choose a different machine and click "Hardware fault".
+     Expected: "Hardware fault confirmed. Technician sent." The agent rules out
+     the network, classifies the fault, names the component, retrieves
+     network-verified coordinates, and raises a work order routed through the
+     depot that holds the part. The card explains why a nearer technician was
+     passed over.
 
-  3. "Run live CAMARA check" makes a real call to the Nokia Network as Code sandbox
-     and shows the response with round-trip latency.
+  Do not reset between the two. The KPI bar then reads "Dispatches avoided 1"
+  alongside "Dispatches issued 1": the same symptom producing two opposite correct
+  decisions, which is the whole product.
 
-  4. "Predictive maintenance" lists machines that have not failed yet, ranked by how
-     soon the model expects them to, with the signals that moved.
+  3. Simulation tab: choose EQ-0233 and click "Leaving the site". Within about 35
+     seconds a Perimeter panel appears on the Dashboard ("Still healthy, still
+     reporting") and "Incidents prevented" reads 1.
+
+  4. Maintenance tab: "Forecast failures" lists machines that have not failed yet,
+     with the expected horizon and the signals that moved. Click one of those
+     machines on the Assets tab to see it marked Healthy and forecast to fail.
+
+  5. Simulation tab: "Run live CAMARA check" makes real calls to the Nokia Network
+     as Code sandbox and shows each response with round-trip latency. It needs
+     NAC_API_KEY when run locally; on the demo link it works as-is.
+
+  "Reset fleet" on the Simulation tab starts over.
 
 DEFAULTS
   Runs with the deterministic agent and dataset-backed CAMARA, so it works with no
@@ -249,7 +265,7 @@ DEFAULTS
       NAC_MODE=live      NAC_API_KEY=<key>
 
 TESTS
-  cd backend && .venv/Scripts/python -m pytest -q     # 240 tests, no network needed
+  cd backend && .venv/Scripts/python -m pytest -q     # 261 tests, no network needed
   cd .. && backend/.venv/Scripts/python scripts/scenario_smoke.py   # headless end-to-end
 
   The suite covers the closed loop end to end, the LLM agent path (driven by a
