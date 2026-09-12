@@ -19,7 +19,7 @@ from ..config import get_settings
 from ..nac import get_network_client
 from ..nac.base import SITE_CENTER, SITE_RADIUS_KM, haversine_km
 from ..models import TelemetrySample, utcnow
-from ..ratelimit import inject_limiter, live_check_limiter
+from ..ratelimit import inject_limiter, investigation_site_limiter, live_check_limiter
 from ..store import store
 from .profiles import build_profiles
 
@@ -263,6 +263,7 @@ class SimulatorEngine:
         # The limiters keep a bucket per client IP. Nothing was calling prune(),
         # so on a public URL the dict grew by one entry per crawler, forever.
         inject_limiter.prune()
+        investigation_site_limiter.prune()
         live_check_limiter.prune()
         store.publish_kpis()
 

@@ -11,11 +11,11 @@ services:
     plan: free
     healthCheckPath: /api/health
     envVars:
-      # The public demo runs the deterministic agent against dataset-backed CAMARA:
-      # no keys on a public URL, no free-tier quota to burn, and the flow judges see
-      # is identical. Set these to llm / live in the dashboard to enable the rest.
+      # The public demo runs the AI agent (needs GROQ_API_KEY, set in the dashboard)
+      # against dataset-backed CAMARA. The scenario endpoint allows one AI investigation
+      # a minute site-wide and 25 a day, so runs stay within the model's free-tier quota.
       - key: AGENT_MODE
-        value: rule
+        value: llm
       - key: NAC_MODE
         value: mock
       - key: SILENT_THRESHOLD_SECONDS

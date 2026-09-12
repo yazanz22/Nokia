@@ -5,7 +5,12 @@ from ..agent.memory import memory
 from ..anomaly import detector
 from ..events import bus
 from ..models import WsEvent
-from ..ratelimit import RateLimiter, inject_budget, inject_limiter
+from ..ratelimit import (
+    RateLimiter,
+    inject_budget,
+    inject_limiter,
+    investigation_site_limiter,
+)
 from ..simulator import simulator
 from ..simulator.engine import DRIFT_SCENARIO, SCENARIOS
 from ..store import store
@@ -54,7 +59,6 @@ def list_scenarios() -> dict:
 @router.post("/scenarios/inject")
 def inject_scenario(req: InjectRequest, request: Request) -> dict:
     inject_limiter.check(request)
-    inject_budget.check()
     asset = store.assets.get(req.asset_id)
     if asset is None:
         raise HTTPException(404, f"unknown asset {req.asset_id}")
@@ -76,6 +80,13 @@ def inject_scenario(req: InjectRequest, request: Request) -> dict:
             409,
             f"{req.asset_id} is already {asset.state} — reset the fleet or pick another asset",
         )
+    # The site-wide minute and the daily budget protect the model's token quota, so they
+    # are charged only for a scenario that starts an investigation, and only once it is
+    # known to be accepted. A perimeter drift never wakes the agent, and a refused click
+    # should not cost the next visitor their minute.
+    if req.scenario in SCENARIOS:
+        investigation_site_limiter.check(request)
+        inject_budget.check()
     label = simulator.inject(req.asset_id, req.scenario)
     return {"ok": True, "asset_id": req.asset_id, "scenario": req.scenario, "dataset_label": label}
 

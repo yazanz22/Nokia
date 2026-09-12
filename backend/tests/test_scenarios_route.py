@@ -11,8 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.ratelimit import inject_budget, inject_limiter
+from app.ratelimit import inject_budget, inject_limiter, investigation_site_limiter
 from app.routes.scenarios import reset_limiter
+from app.simulator.engine import DRIFT_SCENARIO
 from app.store import store
 
 
@@ -22,13 +23,43 @@ def client():
     # process, so a test that spends them would leak into the next one — and into the
     # count the demo has left. Hand every test a clean allowance and put it back.
     inject_limiter._hits.clear()
+    investigation_site_limiter._hits.clear()
     reset_limiter._hits.clear()
     day, count = inject_budget._day, inject_budget._count
     inject_budget._day, inject_budget._count = "", 0
     yield TestClient(app)
     inject_limiter._hits.clear()
+    investigation_site_limiter._hits.clear()
     reset_limiter._hits.clear()
     inject_budget._day, inject_budget._count = day, count
+
+
+def test_one_ai_investigation_a_minute_site_wide(client):
+    """Back-to-back investigations overrun the model's per-minute token quota, and the
+    overrun silently finishes on the rule agent. The second one inside the minute must be
+    refused instead, whoever sends it, while a perimeter drift (no agent) stays allowed
+    and a refused click does not spend the minute."""
+    eligible = client.get("/api/scenarios").json()["eligible_assets"]
+    first, second, third = eligible[0], eligible[1], eligible[2]
+
+    ok = client.post("/api/scenarios/inject", json={"asset_id": first, "scenario": "hardware"})
+    assert ok.status_code == 200, ok.text
+
+    # A 409 on the machine already under investigation is answered before the quota.
+    again = client.post("/api/scenarios/inject", json={"asset_id": first, "scenario": "blindspot"})
+    assert again.status_code == 409
+
+    # A different visitor still shares the site's minute.
+    blocked = client.post(
+        "/api/scenarios/inject",
+        json={"asset_id": second, "scenario": "blindspot"},
+        headers={"x-forwarded-for": "203.0.113.9"},
+    )
+    assert blocked.status_code == 429
+    assert "Retry-After" in blocked.headers
+
+    drift = client.post("/api/scenarios/inject", json={"asset_id": third, "scenario": DRIFT_SCENARIO})
+    assert drift.status_code == 200, drift.text
 
 
 def test_advertised_eligibility_matches_what_inject_accepts(client):

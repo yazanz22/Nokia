@@ -20,10 +20,16 @@ from fastapi import HTTPException, Request
 
 
 class RateLimiter:
-    def __init__(self, limit: int, window_seconds: float, name: str) -> None:
+    def __init__(
+        self, limit: int, window_seconds: float, name: str, per_client: bool = True
+    ) -> None:
         self.limit = limit
         self.window = window_seconds
         self.name = name
+        # per_client=False shares one window across every caller. That is the right shape
+        # for a quota the whole site draws on (tokens per minute), where two well-behaved
+        # visitors on different addresses can still overrun it together.
+        self.per_client = per_client
         self._hits: dict[str, list[float]] = defaultdict(list)
 
     def _client(self, request: Request) -> str:
@@ -45,7 +51,7 @@ class RateLimiter:
 
     def check(self, request: Request) -> None:
         now = time.monotonic()
-        key = self._client(request)
+        key = self._client(request) if self.per_client else "site"
         hits = self._hits[key]
         hits[:] = [h for h in hits if now - h < self.window]
         if len(hits) >= self.limit:
@@ -107,14 +113,21 @@ class DailyBudget:
         self._count += 1
 
 
-# One investigation costs ~1.3k LLM tokens against a shared 8k/min budget, and a
-# retried one costs it twice. Six per minute sits exactly on the ceiling with no room
-# for the retries, so cap at four and keep the headroom.
+# Per visitor: stops one client hammering the button.
 inject_limiter = RateLimiter(limit=4, window_seconds=60.0, name="scenario")
+# Measured 2026-09-13 against Groq: one hardware investigation drew ~5k-7.5k tokens
+# over six model requests, against a free-tier ceiling of 8k tokens per minute and
+# ~200k per day. Investigations already run one at a time (AGENT_MAX_CONCURRENT), but
+# two started back to back still overrun the minute, and the overrun is finished by
+# the rule agent without saying so on screen. One AI investigation a minute, site-wide,
+# keeps every run on the model.
+investigation_site_limiter = RateLimiter(
+    limit=1, window_seconds=60.0, name="AI investigation", per_client=False
+)
 # Each live check is several round trips to Nokia's sandbox.
 live_check_limiter = RateLimiter(limit=10, window_seconds=60.0, name="live CAMARA")
 
-# ~1.3k tokens an investigation against 200k/day leaves room for roughly 150 runs.
-# Stopping at 120 keeps a rehearsal margin in reserve for the day of the demo.
-inject_budget = DailyBudget(limit=120, name="scenario")
+# ~7.5k tokens an investigation at the top of the measured range: 25 stays inside
+# ~200k/day with a little left for a rehearsal on the same key.
+inject_budget = DailyBudget(limit=25, name="AI investigation")
 live_check_budget = DailyBudget(limit=300, name="live CAMARA")
