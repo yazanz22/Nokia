@@ -96,3 +96,26 @@
 - Port of NEOM existing pilot precedent (Egypt/Iraq transit): https://www.logisticsmiddleeast.com/logistics/port-of-neom-pilot-halves-transit-times-across-egypt-saudi-arabia-and-iraq
 - Oxagon $1B port contract precedent: https://www.linkedin.com/pulse/neom-awards-estimated-1bn-oxagon-port-contract-meed-er9cf
 - Port automation cost of delay ($6.9B demurrage/detention): https://www.marineinsight.com/the-6-9-billion-cost-of-non-automated-port-operations-why-delays-are-becoming-more-expensive/
+
+---
+
+## Correction notice — checked 2026-09-12
+
+Three market figures above were checked against the pages they cite and did not hold. The
+pitch deck (`docs/GAMMA_PROMPT.md`) carries the corrected versions; this file is left as
+drafted so the change is visible.
+
+- **TAM "$14.6–15.1B".** Straits Research says $14.63B (2025) and Market Research Future's
+  header says $15.10B — but MRF's own summary on the same page says $43.88B, and Precedence
+  Research, also cited above, says **$9.21B**. The range is two agreeing numbers quoted
+  beside a source that contradicts them. The deck now gives a single figure, $14.6B,
+  attributed to Straits.
+- **"Maritime PdM $1.22B → $2.87B by 2030".** The market.us *Predictive Maintenance in
+  Maritime* report cited above says **$433M (2024) → $3,058M (2034)**. The $1.22B → $2.87B
+  figures are from a different market, **Port Equipment Predictive Maintenance**
+  (natlawreview press release). The deck now names that market and cites that source.
+- **Smart ports $4.0B → $39.1B by 2033.** Grand View Research returns 403 to automated
+  fetches, so this one is still unchecked. Open it by hand before quoting it.
+
+General point for anything added here later: market sizes for the same named market differ
+by up to 4x between research houses. Quote one house per figure and name it.

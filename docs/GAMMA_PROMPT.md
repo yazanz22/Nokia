@@ -80,10 +80,30 @@ visual match with the other half of the deck.
 The savings tiers on Deck B card 1 are `EVIDENCE.md`'s midpoint case at an 80% capture rate,
 recomputed and checked row by row.
 
-**Third-party market sizing — from `source_docs/FILO_Asset_Sentinel_Slides.md`.** The
-TAM/SAM/SOM figures carry source URLs but have **not** been independently re-checked against
-those pages. Open the four links behind the market numbers before submitting and confirm the
-figures and years still read as stated.
+**Third-party market sizing — checked against the source pages on 2026-09-12**, after the
+draft in `source_docs/` was found to carry three figures its own citations did not support.
+What the pages say now:
+
+| Figure | Source | Status |
+|---|---|---|
+| Saudi smart cities $5.1B (2025) → $10.9B (2030) | MarketsandMarkets | Verified exactly |
+| Port-equipment PdM $1.22B (2025) → $2.87B (2030) | natlawreview press release | Verified; note it is a press release, not a research house report |
+| Global PdM $14.6B (2025) | Straits Research | Verified |
+| Smart ports $4.0B → $39.1B by 2033 | Grand View Research | **Still unverified** — the page returns 403 to automated fetches. Open it by hand before submitting |
+
+Three corrections were made rather than carried forward, and the reasons are worth keeping:
+
+- The draft gave the TAM as a **$14.6–15.1B range across three research houses**. Straits says
+  $14.63B and Market Research Future's header says $15.10B, but MRF's own summary on the same
+  page says $43.88B, and Precedence says **$9.21B**. The "range" was two agreeing numbers with
+  a contradicting source cited beside them. It is now a single figure attributed to Straits,
+  and the other two URLs are off the sources card.
+- The draft labelled a line "maritime and port-equipment predictive maintenance" and cited
+  market.us's *Predictive Maintenance in Maritime* report. That report says $433M (2024) →
+  $3,058M (2034). The $1.22B → $2.87B figures belong to a different market, Port Equipment
+  Predictive Maintenance. The label and the citation now match the numbers.
+- Market sizes for the same named market differ by 4x between research houses, which is normal
+  and is why each figure now carries the house that produced it.
 
 ---
 
@@ -208,10 +228,10 @@ CARD 8 — THE MACHINE LEARNING (three prominent stat callouts)
   agent separates network-caused silence from hardware failure perfectly.
 
 CARD 9 — THE MARKET (make this a TAM → SAM → SOM funnel diagram)
-- TAM — global predictive maintenance: $14.6–15.1B (2025)
+- TAM — global predictive maintenance: $14.6B in 2025 (Straits Research)
 - SAM — unattended assets on operator networks in our region: smart ports ($4.0B, forecast
-  $39.1B by 2033) + Saudi smart cities ($5.1B, forecast $10.9B by 2030) + maritime and
-  port-equipment predictive maintenance ($1.22B, forecast $2.87B by 2030)
+  $39.1B by 2033) + Saudi smart cities ($5.1B in 2025, forecast $10.9B by 2030) +
+  port-equipment predictive maintenance ($1.22B in 2025, forecast $2.87B by 2030)
 - SOM — one division or one terminal: pilot-sized, low single-digit millions in year one
 Ports are the same product, not a pivot: a container terminal runs the same unattended
 plant on the same operator networks, with the same ambiguity when one goes quiet. Port of
@@ -328,12 +348,10 @@ market.us/report/construction-heavy-equipment-telematics-market/
 blooloop.com/technology/news/neom-stc-cognitive-cities-5g/
 
 MARKET SIZING
-marketresearchfuture.com/reports/predictive-maintenance-market-2377
 straitsresearch.com/report/predictive-maintenance-market
-precedenceresearch.com/predictive-maintenance-market
 grandviewresearch.com/industry-analysis/smart-port-market
 marketsandmarkets.com/Market-Reports/geography/smart-cities-market/saudi-arabia
-market.us/report/predictive-maintenance-in-maritime-market/
+natlawreview.com/press-releases/port-equipment-predictive-maintenance-market-hit-287-billion-2030-reports
 neom.com/en-us/our-business/port-of-neom
 arabnews.jp/en/business/article_148903/
 
