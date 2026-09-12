@@ -90,7 +90,7 @@ export function AppShell({
               it is not said anywhere on screen. Weighted the way the logo lockup
               weights it: FILO leads, the product name follows. */}
           <div className="brand-name">
-            <span className="brand-co">FILO</span> Asset Sentinel
+            <span className="brand-co">FILO</span> <span className="brand-product">Asset Sentinel</span>
           </div>
         </div>
 
@@ -135,7 +135,7 @@ export function AppShell({
               aria-current={current ? "page" : undefined}
             >
               <TabIcon size={15} weight={current ? "fill" : "regular"} aria-hidden />
-              {label}
+              <span className="tab-label">{label}</span>
               {badge && badge.count > 0 && (
                 <span className={`tab-badge${badge.tone === "warn" ? " is-warn" : ""}`}>
                   {badge.count}

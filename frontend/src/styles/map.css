@@ -145,6 +145,20 @@
   flex: 0 0 auto;
 }
 
+/* In one column the map no longer inherits a height from the viewport (see
+   `.grid-main` in components.css), and an SVG sized to 100% of an auto-height
+   box has no height to take - it rendered as a 34px strip. The box takes the
+   viewBox's own proportions instead, so the terrain fills it edge to edge with
+   no letterbox bars. The cap stops a landscape tablet being handed a map taller
+   than its own screen. */
+@media (max-width: 1100px) {
+  .map-wrap {
+    flex: 0 0 auto;
+    aspect-ratio: 900 / 640;
+    max-height: 75vh;
+  }
+}
+
 /* Four entries need ~420px on one line. In the single-column layout the map is
    narrower than that, so the legend wrapped to three or four lines and covered
    roughly a third of the map it was explaining. */
@@ -154,6 +168,13 @@
     right: var(--s-3);
     justify-content: space-between;
     gap: var(--s-1) var(--s-2);
+  }
+
+  /* Square on a phone. The terrain letterboxes top and bottom, and those two
+     bars are where the key and the legend sit - so on the smallest screens the
+     overlays cover the margin rather than the machines. */
+  .map-wrap {
+    aspect-ratio: 1 / 1;
   }
 }
 

@@ -775,9 +775,19 @@ table.data th.num {
    scrollbars, and no outer scrollbar at all.
 
    Only `.grid-main` asks to fill the viewport. Everything else stacked in a
-   page takes its content height and lets the page scroll. */
+   page takes its content height and lets the page scroll.
+
+   `.kpis` was missing from this list, and it is the least obvious member of it.
+   A flex item normally cannot shrink below its content, but that floor
+   (`min-height: auto`) is switched off for any item whose overflow is not
+   visible — and `.kpis` needs `overflow: hidden` to clip its tiles to its
+   rounded corners. So on any window short enough for the map to want the room,
+   the KPI bar was crushed below its own content and the hidden overflow cut
+   the line under every number: all seven at 1280x720, and the whole second
+   row of tiles at 1024x768. */
 .page > .panel,
-.page > .grid-2 {
+.page > .grid-2,
+.page > .kpis {
   flex: 0 0 auto;
 }
 
@@ -820,6 +830,23 @@ table.data th.num {
   .grid-2 {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* Filling the viewport is a two-column idea. `.grid-main` asks for the
+     remaining height so the desktop map runs to the bottom of the screen, but
+     in a single column that same request crushed everything stacked inside it:
+     on a 360px phone the site map came out 34px tall and the Open work orders
+     panel collapsed to zero, so a dispatch never rendered at all. In one column
+     it takes its content height and the page scrolls instead. */
+  .grid-main {
+    flex: 0 0 auto;
+  }
+
+  /* Which leaves a list panel inside it with no bounded height to scroll in,
+     and the 30-row fleet table would run the whole length of the page. The same
+     60vh bound that tables in `.page > .panel` already get. */
+  .grid-main > .panel .table-wrap {
+    max-height: 60vh;
+  }
 }
 
 @media (max-width: 720px) {
@@ -839,15 +866,62 @@ table.data th.num {
   }
   .topbar {
     padding: 0 var(--s-3);
+    gap: var(--s-2);
+  }
+  .brand {
+    gap: var(--s-2);
   }
   .tabbar {
     padding: 0 var(--s-3);
   }
-  .brand-name {
+  /* The three static status chips cannot fit beside the name at this width, and
+     truncated to "Models Tra" they said nothing anyway. The live Streaming chip
+     stays: it is the one that changes on its own, and how anyone can tell the
+     view is still live. This block used to hide the company name instead, which
+     left a phone showing no name at all. */
+  .topbar-meta > .chip:not([role="status"]) {
     display: none;
   }
   .kpis {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Six labelled tabs need about 560px. Below that the bar scrolled with its
+   scrollbar hidden, so a phone showed three tabs and gave no hint the other
+   three existed. Every tab but the current one drops to its icon. The label is
+   visually hidden rather than removed, so each link keeps its accessible name,
+   and the current tab keeps its label so the page is still named on screen. */
+@media (max-width: 560px) {
+  .tabbar {
+    gap: 0;
+  }
+  .tab {
+    position: relative;
+    padding: 0 var(--s-2);
+    justify-content: center;
+  }
+  .tab:not([aria-current="page"]) {
+    min-width: 40px;
+  }
+  .tab:not([aria-current="page"]) .tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* The narrowest phones cannot fit the full name beside the Streaming chip and
+   the theme toggle. FILO stays, because that is the name; the product name goes. */
+@media (max-width: 380px) {
+  .brand-product {
+    display: none;
   }
 }
 
