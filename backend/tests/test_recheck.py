@@ -28,6 +28,7 @@ from app.agent.tools import (
 from app.anomaly.detector import MAX_RECHECK_ATTEMPTS, detector
 from app.config import get_settings
 from app.models import utcnow
+from app.nac.base import Reachability
 from app.simulator import simulator
 from app.store import store
 
@@ -219,3 +220,34 @@ async def test_a_roaming_device_is_not_treated_as_back():
 
     assert store.assets[asset_id].state == "blindspot"
     assert pending_recheck(asset_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_an_sms_only_device_is_not_treated_as_back(monkeypatch):
+    """Attached, but with no data session — its telemetry still cannot reach us.
+
+    Counting SMS-only as back put a machine into service that could not report, which
+    went quiet again and reopened the same incident. The mock never answers SMS-only,
+    so this only happened against the live operator.
+    """
+    asset_id, incident_id = await _blindspot()
+
+    async def sms_only(_asset_id: str) -> Reachability:
+        return Reachability(
+            asset_id=_asset_id, status="CONNECTED_SMS", roaming=False, country="SA",
+            as_of=utcnow(), source="live",
+        )
+
+    # The detector imports the status call when it runs, so patch it where it lives.
+    import app.agent.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "check_device_status", sms_only)
+    _make_due(asset_id)
+    await _run_due_rechecks()
+
+    assert store.assets[asset_id].state == "blindspot"
+    assert pending_recheck(asset_id) is not None
+    last = str(store.trace[incident_id][-1].model_dump(mode="json"))
+    assert "CONNECTED_SMS" in last
+    # And it says what it saw, rather than calling an attached SIM unreachable.
+    assert "SMS only" in last

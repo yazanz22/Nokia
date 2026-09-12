@@ -119,7 +119,26 @@ def assess_silence(reach: Reachability) -> SilenceVerdict:
             ),
         )
 
-    if reach.connected:
+    # Attached, but for SMS only — the operator reports no data session. Telemetry
+    # travels over data, so the network already explains this silence before the
+    # machine is in question: the modem has power and is registered, it just has no
+    # bearer to send on. This used to fall through to the branch below as
+    # "connected", which told both agents connectivity was ruled out and sent a
+    # mechanic to a machine that could not have reported its state either way. It
+    # takes the coverage response instead, so both agents and the automated re-check
+    # route it exactly as they route a coverage gap: logged, re-checked, nobody sent.
+    if reach.status == "CONNECTED_SMS":
+        return SilenceVerdict(
+            dispatch=False,
+            category="coverage_gap",
+            explanation=(
+                "The SIM is attached to our network for SMS only — the operator reports no "
+                "data session. Telemetry needs data, so the network explains the silence; "
+                "nothing on the machine is in question yet."
+            ),
+        )
+
+    if reach.data_connected:
         # Attached to our own network yet not reporting. Connectivity is ruled out, so
         # this still needs the fault model — it is how a failed sensor on a healthy
         # machine presents, and how a transient dropout presents too.
@@ -217,7 +236,7 @@ def predict_fault(asset_id: str, reach: Reachability | None = None) -> FaultPred
 
     sample = last.model_copy(
         update={
-            "reachable": reach.connected if reach is not None else last.reachable,
+            "reachable": reach.data_connected if reach is not None else last.reachable,
             "telemetry_age_sec": max(last.telemetry_age_sec, silence_s),
             "signal_strength_dbm": (
                 reach.signal_strength_dbm

@@ -61,7 +61,22 @@ class Reachability(BaseModel):
 
     @property
     def connected(self) -> bool:
+        """Attached to the network at all, by data or by SMS.
+
+        Says nothing about whether telemetry can flow: an SMS-only attachment has no
+        data session. For that question use ``data_connected``.
+        """
         return self.status in ("CONNECTED_DATA", "CONNECTED_SMS")
+
+    @property
+    def data_connected(self) -> bool:
+        """Attached with a data session, so telemetry could actually be sent.
+
+        This is the question the silence diagnosis, the fault model and the automated
+        re-check are all really asking. ``connected`` also counts SMS-only, and reading
+        it here is how a device with no data bearer was taken for a healthy one.
+        """
+        return self.status == "CONNECTED_DATA"
 
 
 class DeviceLocation(BaseModel):

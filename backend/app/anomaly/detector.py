@@ -255,7 +255,11 @@ class AnomalyDetector:
         # "Back" means attached to OUR network. A device connected but roaming onto a
         # foreign operator is exactly the state the roaming ticket was raised for — its
         # telemetry still cannot reach us, so it is not back.
-        if reach.connected and verdict.category != "roaming_out":
+        # And attached with a data session. SMS-only is attached, but telemetry travels
+        # over data, so a machine the operator can only reach by SMS still cannot report.
+        # Counting it back put it into service, watched it go quiet again, and opened the
+        # same incident a second time.
+        if reach.data_connected and verdict.category != "roaming_out":
             cancel_recheck(asset_id)
             self._trace(
                 pending.incident_id,
@@ -293,9 +297,14 @@ class AnomalyDetector:
         next_at = reschedule_recheck(pending)
         self._trace(
             pending.incident_id,
-            f"Automated re-check #{attempt}: {asset_id} is still unreachable, so the coverage "
-            "gap has not cleared. Nothing has changed about the machine — waiting and asking "
-            "again rather than sending anyone.",
+            f"Automated re-check #{attempt}: {asset_id} "
+            + (
+                "is attached for SMS only, still with no data session, "
+                if reach.status == "CONNECTED_SMS"
+                else "is still unreachable, "
+            )
+            + "so the coverage gap has not cleared. Nothing has changed about the machine — "
+            "waiting and asking again rather than sending anyone.",
             tool="camara.device_status",
             args={"asset_id": asset_id, "attempt": attempt, "next_at": next_at.isoformat()},
             observation=(
