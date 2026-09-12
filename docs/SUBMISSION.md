@@ -131,6 +131,11 @@ real perimeter watch only when the service's `PUBLIC_BASE_URL` is set to its own
 address, because registering one hands the operator a callback URL. Without it the panel
 registers nothing and says why, rather than guessing an address.
 
+Verified 2026-09-13 00:55 Dubai on commit `ee240a1`: the live panel returned Device
+Status (reachability and roaming), Congestion Insights and Location Retrieval from the
+Nokia sandbox, and Geofencing Subscriptions listed one active perimeter watch on the
+service's account.
+
 Two things a reviewer should know, both deliberate:
 
 - The **agent runs in deterministic mode** on the public URL. The LLM path is
