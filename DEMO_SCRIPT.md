@@ -258,7 +258,8 @@ site**, click. Go straight to **Maintenance** — do not wait for it.
 the **Perimeter** panel is showing.
 
 > "While we were looking at that, one more machine was on the move. Generator GN-233 — nothing wrong
-> with it, engine fine, telemetry streaming. It just drove west.
+> with it, engine fine, telemetry streaming. It's being moved west, off the site. Maybe a crew is
+> repositioning it, maybe it's going somewhere it shouldn't. The system doesn't need to know which.
 >
 > Keep going west from NEOM and you leave our coverage and pick up another country's network. The
 > moment that happens, this machine goes dark and becomes the incident you watched at the start."
