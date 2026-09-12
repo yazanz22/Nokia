@@ -30,8 +30,17 @@ services:
       # outright — and a wrong value here is a real callback address handed to a real
       # operator. Unset or malformed, nothing is registered and the live-check panel
       # says why, which is the safe direction to fail in.
+      #
+      # No default, deliberately. The service this repo actually deploys to was created
+      # from the dashboard rather than from this blueprint, so it is named nokia-rhhp and
+      # the value that used to sit here never reached it. Had it applied, the address was
+      # filo-asset-sentinel.onrender.com - not that service's hostname - so the operator
+      # would have been handed a callback this app does not own. With sync: false, Render
+      # asks for the value when a blueprint creates a service and never overwrites it on a
+      # later sync. Set it per service to that service's own URL: for the current
+      # deployment, https://nokia-rhhp.onrender.com, in the dashboard.
       - key: PUBLIC_BASE_URL
-        value: https://filo-asset-sentinel.onrender.com
+        sync: false
       # Add in the Render dashboard (never commit these):
       #   GROQ_API_KEY   -> enables AGENT_MODE=llm
       #   NAC_API_KEY    -> enables NAC_MODE=live and the live CAMARA panel

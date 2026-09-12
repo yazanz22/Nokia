@@ -267,3 +267,43 @@ def test_a_silent_congestion_query_is_reported_not_omitted(monkeypatch, public_b
     # And the shape the panel already consumed is unchanged.
     assert block["result"]["congestion_level"] is None
     assert block["result"]["confidence_level"] is None
+
+
+# ── a configured address the operator refuses ────────────────────────────────
+# The unset case and the refused case used to share one sentence — "works from the
+# deployed URL and not from localhost" — which was wrong for both on a deployed service
+# and identical on screen. Since the sink stopped coming from the Host header, a refusal
+# can only mean a configured address was turned down, which is a different fix.
+
+
+class _RefusingLiveClient(FakeLiveClient):
+    """A sandbox that turns down the callback address it is handed."""
+
+    async def create_geofence_subscription(self, sink: str) -> dict:
+        self.sinks.append(sink)
+        raise RuntimeError("400 INVALID_SINK: callback host is not reachable")
+
+
+def test_a_refused_sink_is_reported_as_refused_not_as_unset(monkeypatch, public_base):
+    client = _RefusingLiveClient()
+    monkeypatch.setattr(debug_routes, "get_live_client", lambda: client)
+    live_check_limiter._hits.clear()
+    public_base(GOOD_BASE)
+
+    geo = _live_check()["geofencing"]
+
+    assert client.sinks == [f"{GOOD_BASE}{SINK_PATH}"]
+    assert geo["status"] == "sink rejected"
+    assert geo["note"] == debug_routes.SINK_REJECTED
+    # Names the address that was actually sent, so the reviewer can see what was wrong.
+    assert f"{GOOD_BASE}{SINK_PATH}" in geo["detail"]
+    assert "localhost" not in geo["note"]
+
+
+def test_the_unset_case_no_longer_blames_localhost_alone(fake_live, public_base):
+    """Unset is expected locally but is a missing setting on a deploy; the note says both."""
+    geo = _live_check()["geofencing"]
+    assert geo["status"] == "needs public url"
+    assert geo["note"] == debug_routes.NEEDS_PUBLIC_URL
+    assert "PUBLIC_BASE_URL" in geo["note"]
+

@@ -125,10 +125,11 @@ https://nokia-rhhp.onrender.com/
 Live single-service deployment on Render — FastAPI serving the built dashboard, one
 container behind one URL: trained ML models loaded, all
 five scenario outcomes reproduce, and the "Run live CAMARA check" panel returns real
-Nokia sandbox data across all four CAMARA families (Device Status — both reachability
-and roaming — plus Congestion Insights, Location Retrieval, and a Geofencing
-Subscriptions registration; that last one only works from the public URL, because the
-operator will not accept a callback sink it cannot reach).
+Nokia sandbox data from Device Status (both reachability and roaming), Congestion
+Insights and Location Retrieval. The fourth family, Geofencing Subscriptions, registers a
+real perimeter watch only when the service's `PUBLIC_BASE_URL` is set to its own public
+address, because registering one hands the operator a callback URL. Without it the panel
+registers nothing and says why, rather than guessing an address.
 
 Two things a reviewer should know, both deliberate:
 

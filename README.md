@@ -355,6 +355,10 @@ sitting on a public URL, no free-tier quota to burn, and the flow is identical. 
 `GROQ_API_KEY` / `NAC_API_KEY` in the host's dashboard to switch the live LLM agent
 and live CAMARA calls on.
 
+`PUBLIC_BASE_URL` has no default. It is the callback address handed to the operator when
+a geofence is registered, so it has to be the service's own public URL, and it is set per
+service in the host's dashboard. Unset, no subscription is registered.
+
 To run single-service locally without Docker:
 
 ```bash

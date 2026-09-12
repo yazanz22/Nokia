@@ -281,7 +281,9 @@ that requirement in common.
 | Roaming or Congestion lookup errors | best-effort: logged, fields left empty, the primary reachability answer stands |
 | Congestion returned below 50% confidence | reported on the trace and then ignored; the silence falls through to the fault model |
 | No radio metrics *and* no congestion reading | treated as ambiguous and investigated as a possible fault — a wasted check beats a missed breakdown |
-| Geofence subscription rejected from localhost | the operator will only accept a sink it can reach; the panel says "needs public url" rather than showing a raw 400 |
+| Silent device attached for SMS only | no data session means telemetry cannot flow, so the network explains the silence: it takes the coverage response (nobody sent, re-check scheduled), the fault model is told the device is unreachable, and the re-check does not count it as back until a data session returns |
+| Geofence watch with no public address configured | `PUBLIC_BASE_URL` unset: nothing is sent to the operator, and the panel says "needs public url" and why. Expected on localhost; on a deployed service it means the setting is missing |
+| Geofence callback address refused by the operator | a configured `PUBLIC_BASE_URL` was turned down: the panel says "sink rejected" and names the address that was sent, rather than showing a raw 400 |
 | LLM stalls without deciding | agent re-asks for the terminal call, then the deterministic agent finishes the incident |
 | No model files present | transparent rule-based classifier with the same interface |
 | Model returns `NORMAL` | dispatch is refused inside the tool — a healthy reading can never become a work order |

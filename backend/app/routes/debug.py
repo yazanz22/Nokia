@@ -15,11 +15,22 @@ log = logging.getLogger("nac.geofence")
 router = APIRouter(tags=["debug"])
 
 GEOFENCE_CALLBACK_PATH = "/api/nac/geofence-callback"
-# Said the same way in both places a sink cannot be used, so the panel reads
-# identically whether we declined to build one or the operator declined to accept it.
+# Two different ways a perimeter watch goes unregistered, told apart on purpose. They
+# used to share one sentence - "works from the deployed URL and not from localhost" -
+# which was wrong for both on a deployed service: there it can only mean the setting
+# is missing, or the address in it was refused, and those are different fixes.
+#
+# Nothing sent: no public address is configured, so there is no callback to hand over.
 NEEDS_PUBLIC_URL = (
-    "The operator rejects a callback it cannot reach, so registering a perimeter "
-    "watch works from the deployed URL and not from localhost."
+    "Registering a perimeter watch hands the operator a callback address, so it needs "
+    "PUBLIC_BASE_URL set to this deployment's own public URL. Unset, nothing is "
+    "registered: expected on localhost, a missing setting anywhere else."
+)
+# Something sent and refused: an address is configured and the operator turned it down.
+SINK_REJECTED = (
+    "The operator refused the callback address this deployment is configured with, so "
+    "no perimeter watch was registered. PUBLIC_BASE_URL has to be this service's own "
+    "public https address."
 )
 # Congestion is the one family here that can come back empty on its own — the adapter
 # issues it best-effort so it can never fail the reachability answer beside it. The
@@ -65,6 +76,7 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
     # effort — this panel exists to show the other calls too, and a subscription
     # failure must not take the whole proof down with it.
     geofence: dict = {"path": "/geofencing-subscriptions/v0.3/subscriptions"}
+    sink: str | None = None
     try:
         existing = await client._post_list_subscriptions()  # type: ignore[attr-defined]
         if existing:
@@ -94,10 +106,17 @@ async def nac_live_check(request: Request, asset_id: str | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         detail = str(exc)
         if "INVALID_SINK" in detail or "callback host" in detail:
-            # Expected when running locally. The operator will only accept a sink it
-            # can actually reach, which is the API behaving correctly rather than a
-            # fault — say so instead of showing a raw 400.
-            geofence.update(status="needs public url", note=NEEDS_PUBLIC_URL)
+            # A sink was built from PUBLIC_BASE_URL and the operator refused it. This was
+            # once labelled "expected when running locally", from before the sink stopped
+            # coming from the Host header. Locally PUBLIC_BASE_URL is unset and the branch
+            # above answers first, so arriving here means a configured address was turned
+            # down - a different fix from never setting one - and the panel now says
+            # which, with the address that was actually sent.
+            geofence.update(
+                status="sink rejected",
+                note=SINK_REJECTED,
+                detail=(f"Sent {sink}. Operator replied: {detail}" if sink else detail)[:240],
+            )
         else:
             geofence.update(status="unavailable", error=f"{type(exc).__name__}: {detail}"[:160])
 

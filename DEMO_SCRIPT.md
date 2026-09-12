@@ -65,7 +65,12 @@ pwsh scripts/dev.ps1
 - [ ] `curl http://127.0.0.1:8000/api/debug/health` returns your intended modes and
       `"ml_backend": "trained"`. If it says `rule-based`, run `python ml/train.py`.
 - [ ] `"live_camara_available": true` in that same response, or the live-proof panel will error
-- [ ] **`"last_agent_used"` is `llm`, not `rule (fallback)`** — see the Groq warning above
+- [ ] **`"last_agent_used"` is `llm`, not `rule (fallback)`** — see the Groq warning above. On a
+      freshly started server it reads `none` until *that server* has investigated something; the
+      smoke script below runs its own copy of the app and does not change it. Inject one scenario
+      on a machine this script never uses, such as `EQ-0027`, let it settle, then check — and do
+      the memory-cleared reset below afterwards. The value survives that reset but not a restart,
+      so once it reads `llm`, do not restart the server before recording
 - [ ] **Predictive maintenance** panel shows at-risk machines (not "unavailable"), and the map is
       showing **dashed amber rings** — that is the same forecast drawn in two places, and the
       click-through in the 3:35 beat depends on it
@@ -75,7 +80,9 @@ pwsh scripts/dev.ps1
 - [ ] **Run `python scripts/scenario_smoke.py` once on the venue network.** In `llm` mode it fails
       loudly if the model never actually ran — a silent fallback produces *identical, correct*
       output, so this is the only way to know the model is live before you claim it is.
-- [ ] Dashboard open, browser zoomed so the **three columns** all fit
+- [ ] Dashboard open in a window **wider than 1100px**, so the map and the Agent / work-orders
+      column sit side by side. At 1100px and below the dashboard switches to a single column (the
+      tablet and phone layout), which puts the work-order card below the map, off camera
 - [ ] **Reset with memory cleared**, or the agent will recall dead zones it learned in rehearsal
       and Scenario A will open with "I've seen this before" — true, but it pre-empts your beat:
 

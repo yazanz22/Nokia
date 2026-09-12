@@ -31,6 +31,9 @@ interface LiveResult {
     subscription_id?: string;
     count?: number;
     note?: string;
+    /** Why nothing was registered, when that is not an error. Sent by the backend
+        precisely so "not configured" and "the operator refused it" read differently. */
+    detail?: string;
     error?: string;
   };
 }
@@ -204,6 +207,15 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
                   {res.geofencing!.note && (
                     <div className="hint" style={{ marginTop: "var(--s-1)" }}>
                       {res.geofencing!.note}
+                    </div>
+                  )}
+                  {/* The one line that says which of two causes this was. Without it,
+                      "PUBLIC_BASE_URL is not set" and "the operator refused the address
+                      we sent" rendered identically - so a check run on the deployed site
+                      could not tell its own misconfiguration from working as intended. */}
+                  {res.geofencing!.detail && (
+                    <div className="hint" style={{ marginTop: "var(--s-1)" }}>
+                      {res.geofencing!.detail}
                     </div>
                   )}
                   {/* The backend sends the failure reason precisely so a reviewer
