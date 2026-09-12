@@ -50,6 +50,7 @@ SKILLS/
 
 # Presentation and rehearsal material — local only, not submission code
 DEMO_SCRIPT.md
+docs/SUBMISSION.md
 docs/GAMMA_PROMPT.md
 docs/screenshots/
 source_docs/
