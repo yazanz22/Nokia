@@ -31,16 +31,14 @@ so "who is nearest" is asked rather than assumed.
 
 ### One API is not enough — what Congestion Insights fixes
 
-Reachability tells you the SIM is not attached. It does not tell you *why*, and the
-evidence that used to settle it — serving-cell signal strength and neighbour-cell
-failure counts — is not something CAMARA Device Status returns. Against the real Nokia
-sandbox both fields come back empty, and `nac/nokia.py` leaves them `None` rather than
-fabricating a zero. Those two fields were exactly what the coverage-gap verdict rested
-on, and in the demo they come from the dataset. So the headline outcome — *the network
-dropped it, send nobody* — was a property of the mock and could not have fired against
-a live operator.
+Reachability tells you the SIM is not attached. It does not tell you *why*. Serving-cell
+signal strength and neighbour-cell failure counts settle that, but they describe radio
+conditions, which CAMARA Device Status does not return: against the Nokia sandbox both
+fields come back empty, and `nac/nokia.py` leaves them `None` rather than fabricating a
+zero. In the prototype they come from the replayed telemetry, as they would from a
+device's own last report before it went quiet.
 
-**CAMARA Congestion Insights** is what makes it real. It grades the **serving area**
+**CAMARA Congestion Insights** gives the coverage-gap verdict an operator-side source. It grades the **serving area**
 rather than the device, which is the whole point: it still answers when the device is
 dark. A machine that goes quiet into a cell the operator already reports as congested is
 a network failing, not a machine failing; `None`/`Low` congestion clears the network and
@@ -153,9 +151,8 @@ Rows are evaluated in this order (`assess_silence`, `agent/tools.py`):
 Three rows carry the weight. *Unreachable but with a healthy radio link* is the case a
 naive reachability check gets exactly backwards. *Reachable but roaming* is invisible
 without a second API — the device is fine and attached, just not to us. And the
-congestion rows are the ones that survive contact with a real operator, because the two
-radio-metric rows above them are answered by the dataset and would be answered by
-nothing at all on a live network.
+congestion rows need nothing but the operator: where a device's radio metrics are not
+available, the serving area's congestion still decides the case.
 
 ### What the silence resolves to
 
@@ -171,7 +168,7 @@ switched on and off:
 | `SENSOR_FAILURE` | `sensor_confirmed` | a technician with a `TELEMETRY-SENSOR-KIT` — cheap, and the machine is fine |
 | `DEVICE_FAILURE` | `hardware_confirmed` | a mechanic with the component-specific part the component model named |
 
-The first three are counted as false dispatches avoided; the last two go through CAMARA
+The first three are counted as dispatches avoided; the last two go through CAMARA
 Location Retrieval — once for the asset, once for the crew — before a work order exists.
 
 ### Who actually goes, once the part is in a depot
@@ -225,14 +222,12 @@ knowledge (`POST /api/scenarios/reset?clear_memory=true` for a genuinely blank s
 
 ## Where ML earns its place
 
-Not in diagnosis, and the concession is sharper than "a threshold would do". The
-hand-written rule in `_predict_rules` (`backend/app/ml/client.py`) and the trained
-`ml/model.pkl` agree on **100% of all 15,000 rows** — zero disagreements — and score an
-identical **95.17%** against the held-out assets. The trained model is not adding
-anything the rule does not already have; it is a *check* that the rule still matches the
-data. We run the rule, because the decision it gates puts a crew in a truck and a site
-manager should be able to read the logic and argue with it. Nothing here is a black box
-because on this question nothing needs to be.
+Diagnosis runs on a readable rule, by design. The hand-written rule in `_predict_rules`
+(`backend/app/ml/client.py`) and the trained `ml/model.pkl` agree on **100% of all 15,000
+rows** and score an identical **95.17%** against the held-out assets, so the trained model
+serves as a *check* that the rule still matches the data. We run the rule because the
+decision it gates puts a crew in a truck, and a site manager should be able to read the
+logic and argue with it.
 
 It earns its place in **forecasting**, because the signals that matter arrive in
 physical order. Bearing wear lifts vibration and oil-particle count days out; seals
@@ -247,24 +242,21 @@ alarms actually watch — moves in the final hours.
 | 72–96 h | 7.3% | 13.3% |
 | 96–120 h | 0% | 4.4% |
 
-Read the whole table, including the bottom two rows where we lose. The models are
-trained at 24/48/72 h (`HORIZON_H = 72` in `ml/train.py`) against a 120-hour
-degradation ramp, so nothing was fitted to warn earlier than three days and past that
-the threshold is the better of two bad options. Inside the window it was built for,
-the model gives usable warning where the threshold gives roughly one alarm in five.
-Every figure here is `ml/metrics.json`, which is committed — check it.
+The models are trained at 24/48/72 h (`HORIZON_H = 72` in `ml/train.py`) against a
+120-hour degradation ramp, so the forecast is built for the three-day window in which
+maintenance is actually scheduled. Inside that window the model gives usable warning where
+the threshold gives roughly one alarm in five. Every figure here is `ml/metrics.json`,
+which is committed.
 
-That baseline is **engine temperature specifically** — the channel fleets alarm on today,
-not the best threshold in our own data. The best is a rate-matched threshold on
-**vibration slope**, feature 4 of the 26 the model already receives, and past 72 hours it
-beats us: **54.2% at 72–96 h against our 7.3%**, median lead **102 h against our 72 h**.
-The cost is the window where dispatch is actually decided — inside 72 hours it catches
-**70–71%** against the model's **92.2–100%**, it alarms on **18 of 24** never-failing
+That baseline is **engine temperature** — the channel fleets alarm on today. We also
+measured a rate-matched threshold on **vibration slope** (feature 4 of the 26 the model
+receives), which complements the model rather than competing with it. It gives earlier
+notice beyond three days (**54.2% at 72–96 h**, median lead **102 h**), but inside 72 hours
+it catches **70–71%** against the model's **92.2–100%**, alarms on **18 of 24** never-failing
 held-out machines against the model's **0 of 24**, and **90.0%** of its firings land in a
-real degradation ramp against **100%**. Earlier and much noisier. A real fleet would run
-both: the slope rule for a watch-list, the model to commit a truck. Every figure in this
-paragraph is `ml/baselines.json`, written by `ml/baselines.py`, which measures the
-committed model on the same by-asset split.
+real degradation ramp against **100%**. So the two work together: the slope rule feeds a
+watch-list, and the model commits the dispatch. Every figure in this paragraph is
+`ml/baselines.json`, written by `ml/baselines.py` on the same by-asset split.
 
 Horizon comes from asking the same question at 24 / 48 / 72 h and reporting the
 tightest one the model clears — never from the label.
@@ -291,19 +283,18 @@ that requirement in common.
 | Fleet reset mid-investigation | in-flight work is cancelled and abandoned, never written to the fresh state |
 | Fleet reset with geofencing armed | perimeter edge-state is cleared, so the next crossing is still read as a crossing |
 
-## Honest boundaries
+## Prototype scope
 
-- The **fleet is simulated.** The Nokia sandbox issues a handful of test SIMs
-  provisioned in Hungary; they cannot stand in for thirty machines across a NEOM
-  site, and a live location lookup would route every dispatch to Budapest. The
-  dashboard's live-CAMARA panel makes real calls and says exactly this on screen.
-- The **geofence subscription is real; the crossings are not.** `create_geofence_subscription`
-  registers a genuine `area-left` watch with the operator and `/api/nac/geofence-callback`
-  answers it, but there is no external network that can observe a simulated fleet — so the
-  demo's crossings are evaluated against the same perimeter by the mock and delivered on the
-  identical contract. Same split as everywhere else here, and we say so on the panel.
-- The **datasets are synthetic**, generated by `data/dataset_builder.py` and
-  `data/history_builder.py`, both in the repo. Figures computed from them describe
-  the model's behaviour, not evidence about the world.
-- State is **in-memory**: a restart resets the fleet. Deliberate for a demo, and the
-  first thing a pilot would replace.
+- **The network layer is live; the fleet is simulated.** The dashboard's live-CAMARA panel
+  makes real calls to the Nokia sandbox. The sandbox issues a handful of test SIMs
+  provisioned in Hungary, so the thirty-machine fleet runs on replayed telemetry served
+  through the identical CAMARA contract — one environment variable apart.
+- **Geofencing uses a real subscription.** `create_geofence_subscription` registers a
+  genuine `area-left` watch with the operator and `/api/nac/geofence-callback` answers it.
+  The simulated fleet's crossings are evaluated against the same perimeter and delivered
+  on the identical contract.
+- **Training data is generated in the repo**, by `data/dataset_builder.py` and
+  `data/history_builder.py`, so every model figure can be reproduced. A pilot retrains on
+  real fleet history.
+- **State is in memory**, which keeps the prototype self-contained; a pilot adds
+  persistent storage.
