@@ -18,7 +18,7 @@ nothing wrong a **"no fault found" (NFF)** — the exact trip this system exists
 
 | Figure | Source |
 |---|---|
-| **$250–$600 per truck roll**, "in some cases, as high as $1,000" | [Automation Anywhere](https://www.automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service) |
+| **Up to $600 per truck roll**, "in some cases, as high as $1,000"; its worked example uses a conservative **$250** | [Automation Anywhere](https://www.automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service) |
 | **NFF rate of 17–20%** of all dispatches | [TechSee](https://techsee.com/blog/save-millions-lowering-no-fault-found-nff-dispatch-rate/) — *the vendor's own experience, not a third-party study; they note technicians under-report it* |
 | **25% of service calls need at least one additional visit** | Aberdeen Group (2013), quoted in [Automation Anywhere](https://www.automationanywhere.com/company/blog/rpa-thought-leadership/fixing-telecommunications-field-service) |
 | **75–85% first-visit completion** is common | [XOi](https://xoi.io/blog/truck-roll-optimization-field-service) — vendor |
@@ -46,7 +46,6 @@ measured, and already carries a budget line.
 | Excavator loaded cost **$180–$340/hr**; one mid-project failure erases **$3,000–$6,000** of margin | [FleetRabbit](https://fleetrabbit.com/industry/construction-management-system/real-cost-construction-equipment-downtime) |
 | A four-person crew idle at burdened rates costs **$340/hr** producing nothing | [FleetRabbit](https://fleetrabbit.com/industry/construction-management-system/real-cost-construction-equipment-downtime) |
 | Liquidated-damages clauses of **$500–$5,000 per calendar day** for missed milestones | [FleetRabbit](https://fleetrabbit.com/industry/construction-management-system/real-cost-construction-equipment-downtime) |
-| Unplanned downtime costs **3–5× more than planned** downtime | [For Construction Pros](https://www.forconstructionpros.com/equipment-management/article/21104195/the-true-cost-of-unplanned-equipment-downtime) |
 
 A wasted trip is not the only cost. Every hour the wrong diagnosis delays the right repair
 is another hour of idle crew and schedule risk.
@@ -192,12 +191,11 @@ and arguable rather than hidden inside a headline number.
 
 | Input | Value | Whose |
 |---|---|---|
-| Cost per truck roll | $250–$600, up to $1,000 | Sourced — Automation Anywhere |
+| Cost per truck roll | $250 (conservative example) to $600, up to $1,000 | Sourced — Automation Anywhere |
 | NFF rate | 17–20% of dispatches | Sourced — TechSee (vendor, telecom, self-reported) |
 | Truck rolls per technician per day | 2–5 | Sourced — Smarty (vendor, telecom, stated as an assumption) |
 | Working days per year | 252 | Convention |
 | Unplanned downtime | $3,200–$8,700 per machine per day | Sourced — FleetRabbit (vendor) |
-| Unplanned vs planned repair | 3–5× more expensive | Sourced — For Construction Pros |
 | Predictive maintenance impact | 18–25% lower cost, up to 50% less downtime | Sourced — McKinsey |
 | **Share of false dispatches we prevent** | **80%** | **Ours. A target, not a measurement — we have run no field trial.** |
 
@@ -244,8 +242,7 @@ the figures either side of it.
 ### Stream 2 — downtime avoided
 
 The forecaster gives roughly **72 hours of warning where a temperature threshold gives 6**
-(`ml/baselines.json`), which converts an emergency repair into a planned one — and unplanned
-work costs 3–5× planned.
+(`ml/baselines.json`), which converts an emergency repair into a planned one.
 
 | Per failure event caught early | Saving |
 |---|---|

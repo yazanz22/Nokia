@@ -34,14 +34,13 @@ polled. Every step of the agent's reasoning is streamed to a live operator dashb
 ## Is this a real problem?
 
 Yes, and the industry already has names and budgets for it. A wasted field visit is a
-**truck roll** — **$250–$600, up to $1,000** — and **"no fault found"** is the standard
+**truck roll** — **up to $600, as high as $1,000** — and **"no fault found"** is the standard
 term for the trip where the technician arrives and there is nothing to repair. Vendors put
 the NFF rate at **17–20% of all dispatches**; on an operator running 1,000 dispatches a
 day that is **$10.7M a year** spent achieving nothing.
 
 On the other side, unplanned downtime on construction equipment runs
-**$3,200–$8,700 per machine per day**, and unplanned repairs cost **3–5× more** than
-planned ones. Predictive maintenance is established practice: McKinsey puts it at
+**$3,200–$8,700 per machine per day**. Predictive maintenance is established practice: McKinsey puts it at
 **18–25% lower maintenance cost** and **up to 50% less unplanned downtime**.
 
 And the machines really are on mobile networks — **73% of construction telematics is
