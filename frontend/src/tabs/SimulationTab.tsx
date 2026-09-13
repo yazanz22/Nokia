@@ -198,11 +198,11 @@ export function SimulationTab({
         </div>
         <div className="panel-body">
           <p className="text-sm text-muted" style={{ maxWidth: "78ch", marginBottom: "var(--s-3)" }}>
-            A real call to the operator sandbox, with the endpoint paths and round-trip
-            latency it actually returned. The fleet above is simulated and we say so: the
-            sandbox issues a handful of test SIMs provisioned in Hungary, which cannot
-            stand in for thirty machines on a site in Saudi Arabia. The network layer is
-            the same code path either way, one environment variable apart.
+            Real calls to the Nokia Network as Code sandbox, showing the endpoint paths and
+            the round-trip time we measured for each call. The fleet and technician crews on
+            the other tabs are simulated, because the sandbox provides a few test SIMs located
+            in Hungary. The network integration is the same code path either way, one
+            environment variable apart.
           </p>
           <LiveCamaraPanel assetId={selectedAsset} />
         </div>

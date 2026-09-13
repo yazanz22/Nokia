@@ -230,8 +230,8 @@ export function LiveCamaraPanel({ assetId }: { assetId: string | null }) {
             })()}
 
           <div className="hint">
-            A real call to the Nokia sandbox. The test SIM is provisioned in Hungary. The fleet
-            above is replayed telemetry served through the identical CAMARA contract.
+            A real call to the Nokia sandbox. The test SIM is provisioned in Hungary. The
+            simulated fleet runs on replayed telemetry through the identical CAMARA contract.
           </div>
         </div>
       )}
